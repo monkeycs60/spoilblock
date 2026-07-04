@@ -42,6 +42,23 @@ describe('extractCard — yt-lockup-view-model (sidebar /watch)', () => {
   it('expose titleEl', () => expect(info.titleEl).toBeTruthy());
 });
 
+describe('régression — nom type « Santiago » pris pour un âge (substring « ago »)', () => {
+  // Carte lockup synthétique : 1re ligne de métadonnée = un nom de coureur réel
+  // contenant « ago » en substring, suivie de la vraie ligne d'âge « il y a 2 heures ».
+  const html =
+    '<yt-lockup-view-model>' +
+    '<a href="/watch?v=abcdefghijk"></a>' +
+    '<div class="ytLockupMetadataViewModelTitle">Étape 12 : la victoire</div>' +
+    '<div class="ytContentMetadataViewModelMetadataText">Santiago Buitrago</div>' +
+    '<div class="ytContentMetadataViewModelMetadataText">il y a 2 heures</div>' +
+    '</yt-lockup-view-model>';
+  const info = extractCard(new JSDOM(html).window.document.body.firstElementChild);
+  it("channel === 'Santiago Buitrago' (le nom n'est pas pris pour un âge)", () =>
+    expect(info.channel).toBe('Santiago Buitrago'));
+  it("ageText === 'il y a 2 heures' (la vraie ligne d'âge n'est pas masquée)", () =>
+    expect(info.ageText).toBe('il y a 2 heures'));
+});
+
 describe('robustesse', () => {
   it('ne plante pas sur une carte vide et retourne des valeurs sûres', () => {
     const empty = new JSDOM('<ytd-video-renderer></ytd-video-renderer>').window.document.body

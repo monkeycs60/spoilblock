@@ -12,9 +12,10 @@ export const CARD_SELECTOR = [
   'yt-lockup-view-model',
 ].join(',');
 
-const AGE_RE = /il y a|ago/i;
+const AGE_RE = /il y a|\bago\b/i;
 // Textes de métadonnée à écarter quand on cherche le nom de chaîne (vues, âge, spectateurs).
-const NON_CHANNEL_RE = /vues|views|il y a|ago|visionnage|watching|regardent|spectateur/i;
+// `ago` est ancré (\b) sinon il matche en substring dans des noms type « Santiago Buitrago ».
+const NON_CHANNEL_RE = /vues|views|il y a|\bago\b|visionnage|watching|regardent|spectateur/i;
 
 // textContent peut contenir des doublons/whitespace (ex: "Eurosport France\n Eurosport France").
 // On garde la première ligne non vide, trimée.
