@@ -1,0 +1,21 @@
+/* Voile SpoilGuard — appliqué avant le premier paint via la classe .spoilguard-veiled.
+   Deux familles de markup coexistent (voir src/lib/extract.js) :
+   - Polymer classique : titre = #video-title
+   - view-model 2026    : titre = .ytLockupMetadataViewModelTitle (classes camelCase réelles) */
+.spoilguard-veiled #video-title,
+.spoilguard-veiled .ytLockupMetadataViewModelTitle {
+  color: transparent !important;
+  position: relative;
+}
+.spoilguard-veiled img,
+.spoilguard-veiled ytd-thumbnail,
+.spoilguard-veiled yt-thumbnail-view-model {
+  filter: blur(16px) !important;
+}
+/* Coupe le preview vidéo au survol (spoil aussi) */
+.spoilguard-veiled ytd-thumbnail-overlay-inline-playback-renderer,
+.spoilguard-veiled video { display: none !important; }
+/* Le titre neutre réinjecté doit rester lisible (le sélecteur ci-dessus le rend transparent). */
+.spoilguard-veiled #video-title.spoilguard-safe-title,
+.spoilguard-veiled .ytLockupMetadataViewModelTitle.spoilguard-safe-title,
+.spoilguard-safe-title { color: var(--yt-spec-text-primary, #f1f1f1) !important; }
