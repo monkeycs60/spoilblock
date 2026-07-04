@@ -6,9 +6,47 @@ import { TDF_2026 } from './lib/pack.js';
 import { shouldVeil } from './lib/matcher.js';
 import { buildLocalSafeTitle } from './lib/safeTitle.js';
 import { extractCard, CARD_SELECTOR } from './lib/extract.js';
-import { decideReprocess } from './lib/reprocess.js';
+import { decideReprocess, decideAgeUpdate } from './lib/reprocess.js';
 
 const pack = TDF_2026;
+// Page /watch : le h1 principal spoile aussi. On le traite comme une pseudo-carte
+// (même logique shouldVeil + titre neutre + dblclic) via un sélecteur dédié. On ne
+// touche JAMAIS au lecteur (#movie_player) : notre voile ne cible que ytd-watch-metadata.
+const WATCH_SELECTOR = 'ytd-watch-metadata';
+const WATCH_AGE_RE = /il y a|\bago\b/i;
+
+function isWatchCard(card) {
+  return !!card.matches?.(WATCH_SELECTOR);
+}
+
+// Extraction spécifique à la pseudo-carte /watch (structure différente des cartes de
+// liste). videoId est un simple sentinelle « présence du titre » : shouldVeil ne s'en
+// sert pas, il ne sert qu'au garde « carte pas encore peuplée » de processCard.
+function extractWatchCard(card) {
+  const titleEl = card.querySelector(
+    'h1.ytd-watch-metadata yt-formatted-string, h1 yt-formatted-string',
+  );
+  const title = titleEl?.textContent.trim() || '';
+  const cn = card.querySelector('ytd-channel-name #text');
+  const channel =
+    (cn?.textContent || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) || '';
+  let ageText = null;
+  for (const s of card.querySelectorAll('ytd-watch-info-text span')) {
+    if (WATCH_AGE_RE.test(s.textContent)) {
+      ageText = s.textContent.trim() || null;
+      break;
+    }
+  }
+  return { videoId: title ? 'watch' : null, title, channel, ageText, titleEl };
+}
+
+// Sélectionne le bon extracteur selon le type de nœud (liste vs page /watch).
+function extractAny(card) {
+  return isWatchCard(card) ? extractWatchCard(card) : extractCard(card);
+}
 // Garde-fou principal contre le re-traitement ; doublé de l'attribut data-spoilguard
 // (utile pour le debug/inspection et survivant si la carte est clonée sans le WeakSet).
 const processed = new WeakSet();
@@ -16,9 +54,12 @@ const processed = new WeakSet();
 // et de le détacher proprement au reset/à la révélation.
 const dblHandlers = new WeakMap();
 
-// Retrouve l'élément titre d'une carte (les deux familles de markup).
+// Retrouve l'élément titre d'une carte (les deux familles de markup de liste + le
+// h1 de la pseudo-carte /watch, pour que stripVeil/reveal retrouvent le bon nœud).
 function findTitleEl(card) {
-  return card.querySelector('#video-title, .ytLockupMetadataViewModelTitle');
+  return card.querySelector(
+    '#video-title, .ytLockupMetadataViewModelTitle, h1.ytd-watch-metadata yt-formatted-string',
+  );
 }
 
 // Attache le listener dblclick une seule fois par carte (correctif anti-accumulation).
@@ -90,6 +131,7 @@ function fullReset(card) {
   processed.delete(card);
   card.removeAttribute('data-spoilguard');
   delete card.dataset.spoilguardSig;
+  delete card.dataset.spoilguardAge;
   delete card.dataset.spoilguardRevealed;
   delete card.dataset.spoilguardRevealedTitle;
 }
@@ -117,6 +159,9 @@ function veil(card, info) {
   titleEl.textContent = safe;
   titleEl.classList.add('spoilguard-safe-title');
   titleEl.title = 'SpoilGuard — double-clic pour révéler';
+  // Mémorise l'âge utilisé pour la décision : permet de détecter, quand les
+  // métadonnées arrivent après coup, que l'âge réel diffère (correctif sur-voile).
+  card.dataset.spoilguardAge = info.ageText ?? '';
   attachReveal(card, titleEl);
 }
 
@@ -129,7 +174,7 @@ function processCard(card) {
     if (current === (card.dataset.spoilguardRevealedTitle || '')) return;
     fullReset(card);
   }
-  const info = extractCard(card);
+  const info = extractAny(card);
   if (!info.videoId || !info.title) return; // carte pas encore peuplée, on repassera
   processed.add(card);
   if (shouldVeil(info, pack)) {
@@ -155,20 +200,68 @@ function reprocessCard(card) {
     revealed: card.dataset.spoilguardRevealed === '1',
     revealedTitle: card.dataset.spoilguardRevealedTitle || '',
   });
-  if (decision === 'ignore') return;
+  if (decision === 'ignore') {
+    // La carte est stable pour decideReprocess, MAIS si elle est voilée son âge a pu
+    // arriver/​changer depuis la pose du voile → réévaluer (correctif sur-voile).
+    maybeUpdateVeiledAge(card, titleEl);
+    return;
+  }
   if (decision === 'reset') fullReset(card);
   processCard(card);
 }
 
+// Correctif « sur-voile des vieilles vidéos ». processCard peut voiler par prudence
+// une carte dont #metadata-line n'est pas encore peuplé (ageText null → « vidéo
+// récente »). Quand les métadonnées arrivent, decideReprocess conclut 'ignore' (le
+// titre courant est notre titre neutre) et l'âge réel n'est jamais reconsidéré. Ici,
+// sur une carte voilée, on ré-extrait l'âge ; s'il est réel et différent du stocké on
+// rejoue shouldVeil : dé-voile complet si la vidéo n'est en fait pas récente, sinon
+// simple rafraîchissement du titre neutre (l'âge affiché a changé).
+function maybeUpdateVeiledAge(card, titleEl) {
+  if (card.dataset.spoilguard !== 'veiled') return;
+  const el = titleEl || findTitleEl(card);
+  if (!el || el.dataset.spoilguardSafe == null) return; // pas (ou plus) notre voile
+  const info = extractAny(card);
+  const verdict = decideAgeUpdate({
+    storedAge: card.dataset.spoilguardAge || '',
+    newAge: info.ageText,
+  });
+  if (verdict !== 'reevaluate') return;
+
+  const original = el.dataset.spoilguardOriginal ?? info.title;
+  const stillVeil = shouldVeil(
+    { channel: info.channel, ageText: info.ageText, title: original },
+    pack,
+  );
+  if (!stillVeil) {
+    // Faux positif : la vidéo n'est pas récente → dé-voile complet, carte clean.
+    stripVeil(card, el, true);
+    processed.add(card); // reste traitée : ne pas re-voiler à la prochaine mutation
+    card.setAttribute('data-spoilguard', 'clean');
+    card.dataset.spoilguardSig = (findTitleEl(card)?.textContent || '').trim();
+    delete card.dataset.spoilguardAge;
+  } else {
+    // Toujours à voiler mais l'âge affiché a changé → rafraîchir le titre neutre,
+    // la signature anti-boucle et l'âge stocké (sinon rejeu à l'infini).
+    const safe = buildLocalSafeTitle(pack, info.ageText);
+    el.dataset.spoilguardSafe = safe;
+    el.setAttribute('aria-label', safe);
+    el.textContent = safe;
+    card.dataset.spoilguardSig = safe;
+    card.dataset.spoilguardAge = info.ageText ?? '';
+  }
+}
+
 function scan(root) {
-  if (root.matches?.(CARD_SELECTOR)) processCard(root);
+  if (root.matches?.(CARD_SELECTOR) || root.matches?.(WATCH_SELECTOR)) processCard(root);
   root.querySelectorAll?.(CARD_SELECTOR).forEach(processCard);
+  root.querySelectorAll?.(WATCH_SELECTOR).forEach(processCard);
 }
 
 // Remonte de la cible d'une mutation (souvent un nœud texte) à la carte qui la contient.
 function cardOf(target) {
   const el = target.nodeType === 1 ? target : target.parentElement;
-  return el?.closest?.(CARD_SELECTOR) || null;
+  return el?.closest?.(`${CARD_SELECTOR},${WATCH_SELECTOR}`) || null;
 }
 
 new MutationObserver((muts) => {

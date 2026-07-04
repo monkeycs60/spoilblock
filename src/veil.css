@@ -15,7 +15,15 @@
 /* Coupe le preview vidéo au survol (spoil aussi) */
 .spoilguard-veiled ytd-thumbnail-overlay-inline-playback-renderer,
 .spoilguard-veiled video { display: none !important; }
-/* Le titre neutre réinjecté doit rester lisible (le sélecteur ci-dessus le rend transparent). */
+/* Fuites texte sous une carte voilée : la description (extrait) et le chip « Résumé »
+   IA de YouTube spoilent en clair malgré le titre/miniature voilés. On les masque. */
+.spoilguard-veiled .metadata-snippet-container,
+.spoilguard-veiled ytd-expandable-metadata-renderer { display: none !important; }
+/* Le titre neutre réinjecté doit rester lisible (le sélecteur transparent ci-dessus
+   le cible aussi). On hérite de la couleur du parent (couleur normale du titre) :
+   `inherit` marche en thème clair ET sombre, là où une var absente retombait sur un
+   #f1f1f1 quasi blanc illisible sur fond blanc. Les sélecteurs .safe-title composés
+   (avec #video-title / .ytLockup…) l'emportent en spécificité sur la règle transparent. */
 .spoilguard-veiled #video-title.spoilguard-safe-title,
 .spoilguard-veiled .ytLockupMetadataViewModelTitle.spoilguard-safe-title,
-.spoilguard-safe-title { color: var(--yt-spec-text-primary, #f1f1f1) !important; }
+.spoilguard-safe-title { color: inherit !important; }

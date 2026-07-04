@@ -29,3 +29,24 @@ export function decideReprocess({ isProcessed, currentTitle, safeTitle, revealed
   // childList-silencieuse) ; différente = carte recyclée → repartir de zéro.
   return current === (safeTitle ?? '').trim() ? 'ignore' : 'reset';
 }
+
+// Décision pure de réévaluation d'une carte VOILÉE quand son âge affiché arrive ou
+// change après coup. Contexte du bug « sur-voile » : processCard peut voiler une carte
+// par prudence (ageText null car #metadata-line pas encore peuplé). Quand les
+// métadonnées arrivent (mutation childList), le chemin normal conclut 'ignore' (le
+// titre courant est notre titre neutre == signature) et l'âge réel n'est jamais
+// reconsidéré. Ici on décide, à partir de l'âge stocké au moment du voile et de l'âge
+// fraîchement extrait, s'il faut rejouer shouldVeil (le rejeu lui-même vit dans le
+// câblage : ré-extraction + shouldVeil + dé-voile/refresh).
+//   storedAge : dataset.spoilguardAge posé au voile ('' si l'âge était alors illisible)
+//   newAge    : ageText ré-extrait (null si toujours illisible)
+// Sorties :
+//   'none'       → âge absent, vide, ou identique au stocké → ne rien faire
+//   'reevaluate' → âge réel et différent du stocké → rejouer la décision de voile
+export function decideAgeUpdate({ storedAge, newAge }) {
+  if (newAge == null) return 'none'; // âge toujours illisible → prudence maintenue
+  const fresh = String(newAge).trim();
+  if (fresh === '') return 'none';
+  const stored = (storedAge ?? '').trim();
+  return fresh === stored ? 'none' : 'reevaluate';
+}

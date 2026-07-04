@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideReprocess } from '../src/lib/reprocess.js';
+import { decideReprocess, decideAgeUpdate } from '../src/lib/reprocess.js';
 
 // decideReprocess pilote le re-traitement d'une carte YouTube touchée par une
 // mutation childList (titre peuplé/recyclé). Sortie : 'ignore' | 'reset' | 'process'.
@@ -154,4 +154,42 @@ describe('decideReprocess — carte révélée (dblclick)', () => {
         revealedTitle: 'Étape 5 : la victoire de Pogacar',
       }),
     ).toBe('reset'));
+});
+
+// decideAgeUpdate pilote la réévaluation tardive d'une carte VOILÉE quand l'âge
+// arrive/​change après coup (processCard a voilé par prudence avec ageText null car
+// #metadata-line pas encore peuplé). Sortie : 'none' | 'reevaluate'.
+//   'none'       → âge inchangé, toujours illisible, ou vide → ne rien faire
+//   'reevaluate' → un âge réel, différent du stocké → rejouer shouldVeil côté câblage
+describe('decideAgeUpdate — réévaluation de l’âge tardif', () => {
+  it("âge toujours null (métadonnées pas encore là) → 'none'", () =>
+    expect(decideAgeUpdate({ storedAge: '', newAge: null })).toBe('none'));
+
+  it("âge vide/espaces → 'none'", () =>
+    expect(decideAgeUpdate({ storedAge: '', newAge: '   ' })).toBe('none'));
+
+  it("âge réel apparaît alors que rien n'était stocké → 'reevaluate'", () =>
+    expect(decideAgeUpdate({ storedAge: '', newAge: 'il y a 8 mois' })).toBe(
+      'reevaluate',
+    ));
+
+  it("âge identique au stocké → 'none' (pas de rejeu inutile)", () =>
+    expect(
+      decideAgeUpdate({ storedAge: 'il y a 3 heures', newAge: 'il y a 3 heures' }),
+    ).toBe('none'));
+
+  it("tolère les espaces autour des deux valeurs → 'none' si égales", () =>
+    expect(
+      decideAgeUpdate({ storedAge: 'il y a 3 heures', newAge: '  il y a 3 heures ' }),
+    ).toBe('none'));
+
+  it("âge stocké réel puis changé (recyclage d'affichage) → 'reevaluate'", () =>
+    expect(
+      decideAgeUpdate({ storedAge: 'il y a 3 heures', newAge: 'il y a 8 mois' }),
+    ).toBe('reevaluate'));
+
+  it("storedAge undefined + âge réel → 'reevaluate'", () =>
+    expect(decideAgeUpdate({ storedAge: undefined, newAge: 'il y a 2 jours' })).toBe(
+      'reevaluate',
+    ));
 });
