@@ -10,6 +10,7 @@ const AGE_UNITS = [
   [/semaine|week/i, 168], [/mois|month/i, 720], [/\ban[s]?\b|year/i, 8760],
 ];
 
+// Attend une chaîne d'âge déjà isolée (« il y a 10 heures », « 2 hours ago »), pas une ligne de métadonnées composite type « 1,2 M de vues • il y a 10 heures ».
 export function parseAgeHours(ageText) {
   const m = (ageText || '').match(/(\d+)\s*(\p{L}+)/u);
   if (!m) return null;

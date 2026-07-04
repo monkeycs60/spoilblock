@@ -18,6 +18,10 @@ describe('parseAgeHours', () => {
   it('parse l\'anglais', () => expect(parseAgeHours('10 hours ago')).toBe(10));
   it('parse "1 day ago"', () => expect(parseAgeHours('1 day ago')).toBe(24));
   it('semaines/mois/ans = vieux', () => expect(parseAgeHours('il y a 3 semaines')).toBe(504));
+  it('parse les mois FR', () => expect(parseAgeHours('il y a 1 mois')).toBe(720));
+  it('parse les ans FR', () => expect(parseAgeHours('il y a 1 an')).toBe(8760));
+  it('parse l\'abréviation "h"', () => expect(parseAgeHours('il y a 1 h')).toBe(1));
+  it('parse le préfixe "Streamed"', () => expect(parseAgeHours('Streamed 2 hours ago')).toBe(2));
   it('inconnu → null (prudence: on voile)', () => expect(parseAgeHours('Diffusé il y a peu')).toBe(null));
 });
 
