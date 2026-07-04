@@ -1,0 +1,24 @@
+{
+  "name": "spoilguard",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "esbuild src/content.js --bundle --outfile=dist/content.js && cp src/veil.css dist/veil.css",
+    "watch": "esbuild src/content.js --bundle --outfile=dist/content.js --watch",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.9"
+  }
+}
