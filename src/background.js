@@ -3,7 +3,12 @@
 //
 // Communication content ↔ SW : UNIQUEMENT par messages (aucun import croisé).
 // Le content script envoie { type:'classify', videos:[{videoId,title,channel}] } et
-// reçoit { results:[{ videoId, spoiler, safeTitle } | { videoId, unavailable:true }] }.
+// reçoit { results:[{ videoId, spoiler, safeTitle, publishedAt } | { videoId, unavailable:true }] }.
+// Le SW ne relit ni ne transforme les résultats : chaque objet backend transite TEL QUEL
+// vers le content (y compris le nouveau champ `publishedAt` — ISO string|null — exploité
+// côté content pour lever le sur-voile des vieilles vidéos). Ce champ est donc aussi mis
+// en cache session avec le reste du résultat : ACCEPTABLE, car l'âge d'une vidéo ne fait
+// que croître → un verdict « trop vieille » reste valide tant que le cache vit.
 //
 // Stratégie :
 //   - Cache par videoId dans chrome.storage.session (persiste tant que le navigateur

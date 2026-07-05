@@ -488,9 +488,20 @@ function applyBackendResult(card, result) {
   const veiled = st.status === 'veiled' && titleEl != null && st.safeTitle != null;
   const revealed = st.status === 'revealed';
   const currentVideoId = extractAny(card).videoId;
-  const decision = backendDecision({ result, veiled, revealed, videoId: currentVideoId });
+  const decision = backendDecision({
+    result,
+    veiled,
+    revealed,
+    videoId: currentVideoId,
+    // Seuil d'âge de la compétition (pack fusionné) + horloge courante → la lib décide,
+    // pure, si une vraie carte spoiler est trop vieille pour encore spoiler (unveil-old).
+    maxAgeHours: state.merged.maxAgeHours,
+    now: Date.now(),
+  });
 
-  if (decision === 'unveil') backendUnveil(card, titleEl);
+  // 'unveil' (faux positif) et 'unveil-old' (spoiler mais publiée avant le seuil d'âge)
+  // → même dé-voilement définitif : la carte est marquée clean et ne sera plus re-voilée.
+  if (decision === 'unveil' || decision === 'unveil-old') backendUnveil(card, titleEl);
   else if (decision === 'retitle') backendRetitle(card, titleEl, result.safeTitle);
   // 'noop' → rien : le voile générique Phase 1 reste (dégradation gracieuse).
 }

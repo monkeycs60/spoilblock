@@ -13,6 +13,7 @@ import { createRateLimiter, type RateLimiter } from '../lib/rateLimit';
 import { resolveCompetitions } from '../data/competitions';
 import { captureServerEvent, BACKEND_DISTINCT_ID } from '../lib/posthog';
 import type { Classification, ClassifyFn, Video } from '../lib/classifier';
+import type { PublishedIndex } from '../lib/publishedIndex';
 
 const videoSchema = z.object({
   videoId: z.string().min(1).max(20),
@@ -32,6 +33,12 @@ export type ClassifyRouteDeps = {
   /** Rate limiter (injectable pour tests). */
   rateLimiter?: RateLimiter;
   rateLimit?: { limit?: number; windowMs?: number };
+  /**
+   * Index videoId → publishedAt (ISO), alimenté par les flux RSS. Optionnel :
+   * absent => `publishedAt: null` partout. Best-effort strict : un échec ne casse
+   * jamais /classify.
+   */
+  publishedIndex?: PublishedIndex;
 };
 
 /** Titre générique construit côté serveur quand le LLM ne fournit pas de safeTitle. */
@@ -103,6 +110,19 @@ export function createClassifyRoute(deps: ClassifyRouteDeps) {
       }
     }
 
+    // publishedAt : TOUJOURS recalculé à la réponse (jamais mis en cache de
+    // classification, pour rester frais et ne pas invalider les caches). Best-effort
+    // strict : tout échec RSS => Map vide => publishedAt:null partout, jamais une
+    // erreur qui casserait /classify.
+    let publishedMap = new Map<string, string>();
+    if (deps.publishedIndex) {
+      try {
+        publishedMap = await deps.publishedIndex.lookup(videos.map((v) => v.videoId));
+      } catch (err) {
+        console.error('[classify] publishedIndex.lookup échoué:', err);
+      }
+    }
+
     // Assemblage dans l'ordre de la requête + post-traitement safeTitle.
     const results = videos.map((v) => {
       const r = hits.get(v.videoId) ?? { videoId: v.videoId, spoiler: true, safeTitle: null };
@@ -112,7 +132,8 @@ export function createClassifyRoute(deps: ClassifyRouteDeps) {
       // Clamp serveur : même si le LLM (ou un schéma tolérant) laisse passer un
       // titre géant, on ne renvoie jamais plus de SAFE_TITLE_MAX caractères.
       const safeTitle = raw === null ? null : raw.slice(0, SAFE_TITLE_MAX);
-      return { videoId: v.videoId, spoiler: r.spoiler, safeTitle };
+      const publishedAt = publishedMap.get(v.videoId) ?? null;
+      return { videoId: v.videoId, spoiler: r.spoiler, safeTitle, publishedAt };
     });
 
     // Instrumentation pour le logger serveur.

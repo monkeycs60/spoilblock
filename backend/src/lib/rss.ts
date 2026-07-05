@@ -56,8 +56,21 @@ export const CHANNEL_ID_MAP: Record<string, string> = {
   'wimbledon': 'UCNa8NxMgSm7m4Ii9d4QGk1Q',          // @Wimbledon → auteur RSS: « Wimbledon »
   'formula 1': 'UCB_qr75-ydFVKSF9Dmo6izg',          // @Formula1 → auteur RSS: « FORMULA 1 »
   'canal+ sport': 'UC8ggH3zU61XO0nMskSQwZdA',       // @CANALPlusSport → auteur RSS: « CANAL+ Sport »
+  // Chaînes internationales SPÉCIALISÉES ajoutées le 2026-07-06 : channelId extrait de
+  // https://www.youtube.com/@handle (UA Googlebot, via "externalId"/canonical) puis VALIDÉ
+  // via feeds/videos.xml?channel_id=… (15 <entry>, <name> conforme). Seules les chaînes
+  // mono-thématiques figurent ici : leur flux RSS ne parle QUE de la compétition, donc il
+  // peut alimenter le feed companion sans le polluer.
+  'flobikes': 'UCljVdpux_uz7NydDWYEeSIA',           // @FloBikes → auteur RSS: « FloBikes » (cyclisme US)
+  'gcn racing': 'UCu7phdCr-raU7OaJfEpHZww',         // @gcnracing → auteur RSS: « GCN Racing » (cyclisme)
+  'tennis tv': 'UCbcxFkd6B9xUU54InHv4Tig',          // @TennisTV → auteur RSS: « Tennis TV »
+  'sky sport tennis': 'UC7bfeZHiUlQO32O32qlMZXg',   // @SkySportTennis → auteur RSS: « Sky Sport Tennis » (IT)
+  'sky sports f1': 'UC3kxJQ9RfaS5CKeYbbFMi4Q',      // @SkySportsF1 → auteur RSS: « Sky Sports F1 » (UK)
   // Non mappées volontairement : « eurosport » (nu) et « canal+ » (nu) sont des
   // catch-all redondants — les chaînes officielles France ci-dessus couvrent le risque.
+  // De même, les chaînes GÉNÉRALISTES multi-sports ajoutées aux packs (nbc sports, tnt sports,
+  // itv sport, rtbfsport, srf sport, espn) NE sont PAS mappées : leur flux RSS est multi-sports
+  // et polluerait le feed companion. Elles servent au seul pré-filtre extension (âge < 72h + LLM).
 };
 
 /** Résout un nom de chaîne (tel qu'en pack) en channelId, ou undefined si inconnu. */

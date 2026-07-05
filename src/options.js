@@ -3,6 +3,7 @@
 // (src/lib/pack.js) si le backend est injoignable.
 
 import { PACKS } from './lib/pack.js';
+import { t, applyI18n } from './lib/i18n.js';
 
 const DEFAULT_BACKEND = 'https://o2nn42t9tx9tzfukiamwlrnl.137.74.43.81.sslip.io';
 const DEFAULT_COMPETITIONS = ['tdf-2026'];
@@ -78,7 +79,7 @@ async function checkBackend(backendUrl) {
   const pill = $('backendStatus');
   const text = $('backendStatusText');
   pill.className = 'status-pill';
-  text.textContent = 'Vérification…';
+  text.textContent = t('checking');
 
   let online = false;
   try {
@@ -92,7 +93,7 @@ async function checkBackend(backendUrl) {
   }
 
   pill.classList.add(online ? 'online' : 'offline');
-  text.textContent = online ? 'En ligne' : 'Hors ligne';
+  text.textContent = online ? t('online') : t('offline');
 }
 
 function renderCompetitions(list) {
@@ -131,7 +132,10 @@ function renderCompetitions(list) {
     compsEl.append(row);
   }
   if (!shown.length) {
-    compsEl.innerHTML = '<p class="hint">Aucune compétition disponible.</p>';
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = t('noCompetitionsAvailable');
+    compsEl.append(p);
   }
 }
 
@@ -139,7 +143,7 @@ async function toggleComp(id, on) {
   if (on) active.add(id);
   else active.delete(id);
   await storageSet({ activeCompetitions: [...active] });
-  setStatus('Enregistré');
+  setStatus(t('saved'));
 }
 
 function refreshPauseState(pauseUntil) {
@@ -149,7 +153,7 @@ function refreshPauseState(pauseUntil) {
   if (remaining > 0) {
     pill.className = 'status-pill online';
     pill.style.display = '';
-    text.textContent = `Révélé encore ${Math.ceil(remaining / 60000)} min`;
+    text.textContent = t('revealedRemainingMin', { n: Math.ceil(remaining / 60000) });
   } else {
     pill.style.display = 'none';
     text.textContent = '';
@@ -157,6 +161,8 @@ function refreshPauseState(pauseUntil) {
 }
 
 async function init() {
+  applyI18n();
+
   const store = await storageGet([
     'activeCompetitions',
     'backendUrl',
@@ -174,7 +180,7 @@ async function init() {
   backendInput.addEventListener('change', async () => {
     const v = backendInput.value.trim();
     await storageSet({ backendUrl: v });
-    setStatus('URL enregistrée');
+    setStatus(t('urlSaved'));
     checkBackend(v);
     renderCompetitions(await loadCompetitions(v));
   });
@@ -183,7 +189,7 @@ async function init() {
     const pauseUntil = Date.now() + PAUSE_MS;
     await storageSet({ pauseUntil });
     refreshPauseState(pauseUntil);
-    setStatus('Révélation activée pour 10 min');
+    setStatus(t('revealActivated'));
   });
 
   refreshPauseState(store.pauseUntil);

@@ -74,6 +74,21 @@ describe('buildPrompt', () => {
     // Les deux doivent viser un safeTitle « Résumé étape 2 ».
     expect(prompt).toContain('🚴 Tour de France 2026 – Résumé étape 2');
   });
+
+  it('impose le safeTitle dans la LANGUE DU TITRE D\'ORIGINE (prompt v3)', () => {
+    const prompt = buildPrompt([TDF_2026], videos);
+    // La consigne « EN FRANÇAIS » (v2) a disparu au profit de la langue d'origine.
+    expect(prompt).not.toContain('safeTitle EN FRANÇAIS');
+    expect(prompt).toContain("LANGUE DU TITRE D'ORIGINE");
+    // Le mapping langue→langue est explicité.
+    expect(prompt).toMatch(/anglais.*safeTitle anglais/);
+  });
+
+  it('contient un exemple few-shot EN (titre anglais → safeTitle anglais)', () => {
+    const prompt = buildPrompt([TDF_2026], videos);
+    expect(prompt).toContain('Stage 2 Highlights - INSANE finish as UAE dominates!');
+    expect(prompt).toContain('🚴 Tour de France 2026 – Stage 2 Highlights');
+  });
 });
 
 describe('fallbackResult', () => {

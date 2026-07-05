@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "SpoilGuard",
+  "default_locale": "en",
+  "name": "__MSG_appName__",
   "version": "0.2.0",
-  "description": "Masque les spoilers sportifs sur YouTube — Tour de France, Wimbledon, F1. Titres réécrits par IA, zéro spoil.",
+  "description": "__MSG_appDesc__",
   "icons": {
     "16": "assets/icon16.png",
     "32": "assets/icon32.png",

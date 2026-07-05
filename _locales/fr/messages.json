@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "SpoilGuard",
+    "description": "Nom de l'extension affiché dans le store et le navigateur."
+  },
+  "appDesc": {
+    "message": "Masque les spoilers sportifs sur YouTube — Tour de France, Wimbledon, F1. Titres réécrits par IA, zéro spoil.",
+    "description": "Description courte de l'extension affichée dans le store."
+  }
+}

@@ -5,6 +5,7 @@
 // dailyBlockedDate) écrit par le content script.
 
 import { PACKS } from './lib/pack.js';
+import { t, applyI18n } from './lib/i18n.js';
 
 const PAUSE_MS = 10 * 60 * 1000;
 const DEFAULT_COMPETITIONS = ['tdf-2026'];
@@ -52,13 +53,13 @@ function renderCount(store) {
       ? raw
       : 0;
   $('blockedCount').textContent = String(n);
-  $('blockedNoun').textContent = n > 1 ? 'spoilers bloqués' : 'spoiler bloqué';
+  $('blockedNoun').textContent = n > 1 ? t('blockedMany') : t('blockedOne');
 }
 
 function renderEnabled(enabled) {
   $('enabled').checked = enabled;
   $('guard').classList.toggle('on', enabled);
-  $('guardLabel').textContent = enabled ? 'Protection active' : 'Protection désactivée';
+  $('guardLabel').textContent = enabled ? t('guardOn') : t('guardOff');
 }
 
 function renderBadges(activeCompetitions) {
@@ -72,7 +73,7 @@ function renderBadges(activeCompetitions) {
   if (!known.length) {
     const empty = document.createElement('span');
     empty.className = 'badge empty';
-    empty.textContent = 'Aucune compétition';
+    empty.textContent = t('noCompetition');
     el.append(empty);
     return;
   }
@@ -98,10 +99,10 @@ function renderPause(pauseUntil) {
     const m = Math.floor(totalSec / 60);
     const s = String(totalSec % 60).padStart(2, '0');
     btn.classList.add('active');
-    label.textContent = `Révélé encore ${m}:${s}`;
+    label.textContent = t('revealedRemaining', { time: `${m}:${s}` });
   } else {
     btn.classList.remove('active');
-    label.textContent = 'Tout révéler 10 min';
+    label.textContent = t('revealAll');
     if (tick) {
       clearInterval(tick);
       tick = null;
@@ -120,6 +121,8 @@ function startCountdown(pauseUntil) {
 }
 
 async function init() {
+  applyI18n();
+
   const store = await storageGet([
     'enabled',
     'pauseUntil',

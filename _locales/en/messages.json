@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "SpoilGuard",
+    "description": "Extension name shown in the store and browser."
+  },
+  "appDesc": {
+    "message": "Hide sports spoilers on YouTube — Tour de France, Wimbledon, F1. AI-rewritten titles, zero spoilers.",
+    "description": "Extension short description shown in the store listing."
+  }
+}

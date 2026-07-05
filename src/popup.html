@@ -157,7 +157,7 @@
           <span class="status-dot"></span>
           <div>
             <div class="guard-label" id="guardLabel">Protection active</div>
-            <div class="guard-sub">Masque les spoilers sur YouTube</div>
+            <div class="guard-sub" data-i18n="guardSub">Masque les spoilers sur YouTube</div>
           </div>
         </div>
         <label class="switch">
@@ -169,11 +169,11 @@
 
     <div class="stat">
       <span class="num" id="blockedCount">0</span>
-      <span class="cap"><b id="blockedNoun">spoiler bloqué</b> aujourd'hui</span>
+      <span class="cap"><b id="blockedNoun">spoiler bloqué</b> <span id="blockedSuffix" data-i18n="blockedSuffix">aujourd'hui</span></span>
     </div>
 
     <div class="comps">
-      <div class="lbl">Compétitions surveillées</div>
+      <div class="lbl" data-i18n="compsWatched">Compétitions surveillées</div>
       <div class="badges" id="badges"></div>
     </div>
 
@@ -187,7 +187,7 @@
     <hr />
     <div class="foot">
       <a id="options" class="opt" href="#">
-        Paramètres et compétitions
+        <span data-i18n="settingsLink">Paramètres et compétitions</span>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </a>
     </div>

@@ -22,6 +22,8 @@ export type AppDeps = {
   /** RSS injectable (mock en test) — sinon client RSS réel. */
   fetchChannelFeed?: FeedRouteDeps['fetchChannelFeed'];
   feedCache?: FeedRouteDeps['feedCache'];
+  /** Index publishedAt (RSS) injecté dans /classify (best-effort, optionnel). */
+  publishedIndex?: ClassifyRouteDeps['publishedIndex'];
 };
 
 export function createApp(deps: AppDeps) {
@@ -65,7 +67,15 @@ export function createApp(deps: AppDeps) {
   const rateLimiter =
     deps.rateLimiter ?? createRateLimiter(deps.rateLimit ?? { limit: 60, windowMs: 60_000 });
 
-  app.route('/classify', createClassifyRoute({ ...deps, cache: classifyCache, rateLimiter }));
+  app.route(
+    '/classify',
+    createClassifyRoute({
+      classify: deps.classify,
+      cache: classifyCache,
+      rateLimiter,
+      publishedIndex: deps.publishedIndex,
+    })
+  );
   app.route('/competitions', createCompetitionsRoute());
   app.route(
     '/feed',

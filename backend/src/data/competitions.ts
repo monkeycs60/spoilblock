@@ -37,11 +37,28 @@ export const TDF_2026: Competition = {
     'cycling pro net',
     'lanterne rouge',
     'velon cc',
+    // Chaînes internationales (vérifiées 2026-07-06 : @handle via UA Googlebot → channelId,
+    // puis RSS feeds/videos.xml validé, <name> confronté). Spécialisées cyclisme → aussi
+    // dans CHANNEL_ID_MAP (feed companion) :
+    'flobikes',
+    'gcn racing',
+    // Généralistes multi-sports → pré-filtre extension seulement (âge < 72h + LLM derrière) ;
+    // volontairement HORS CHANNEL_ID_MAP pour ne pas polluer le feed RSS de la companion :
+    'nbc sports',
+    'tnt sports',
+    'itv sport',
+    'rtbfsport',
+    'srf sport',
   ],
   lexicon: [
     'tour de france', 'tdf', 'maillot jaune', 'étape', 'etape', 'stage',
     'peloton', 'échappée', 'echappee', 'pogacar', 'pogačar', 'vingegaard',
     'evenepoel', 'contre-la-montre', 'clm', 'grand départ',
+    // Vocabulaire multilingue (es/it/de/nl/en). « rit » (nl) et « GC » écartés :
+    // substrings trop courts/ambigus (includes() → faux positifs). « stage »/« peloton » déjà là.
+    'etapa', 'tappa', 'etappe', 'klassement',
+    'stage winner', 'yellow jersey', 'maglia gialla', 'gelbes trikot',
+    'highlights', 'recap', 'resumen', 'zusammenfassung',
   ],
 };
 
@@ -58,12 +75,22 @@ export const WIMBLEDON_2026: Competition = {
     'wimbledon',
     'eurosport france',
     'eurosport',
+    // Ajouts internationaux (vérifiés 2026-07-06). Spécialisées tennis → CHANNEL_ID_MAP :
+    'tennis tv',
+    'sky sport tennis',
+    // Généraliste sport (US) → pré-filtre extension seulement (hors feed) :
+    'espn',
+    // BBC (@BBC) écartée : chaîne généraliste (news/divertissement), pas « sport-only » →
+    // trop de faux positifs si voilée < 72h. Le tennis BBC n'est pas sur @BBC de toute façon.
   ],
   lexicon: [
     'wimbledon', 'djokovic', 'alcaraz', 'sinner', 'swiatek', 'sabalenka',
     'demi-finale', 'demi finale', 'quart de finale', 'quarts de finale',
     '3ème tour', '3eme tour', 'tie-break', 'tie break', 'gazon',
     'grand chelem', 'break', 'set decisif', 'set décisif',
+    // Vocabulaire anglophone (sobre, termes spécifiques au tournoi) :
+    'semifinal', 'semifinals', 'quarterfinal', 'quarterfinals',
+    'centre court', 'grass court', 'grand slam',
   ],
 };
 
@@ -79,12 +106,22 @@ export const F1_2026: Competition = {
     'formula 1',
     'canal+ sport',
     'canal+',
+    // Ajouts internationaux (vérifiés 2026-07-06). Spécialisée F1 → CHANNEL_ID_MAP :
+    'sky sports f1',
+    // Généraliste sport (US, diffuseur F1) → pré-filtre extension seulement (hors feed) :
+    'espn',
+    // Écartées : Motorsport.com / @MotorsportNetwork (multi-séries : IndyCar, WEC, MotoGP…
+    // → polluerait), ServusTV (chaîne généraliste autrichienne, pas sport-only).
   ],
   lexicon: [
     'f1', 'formule 1', 'formula 1', 'grand prix', 'gp de', 'gp d\'',
     'verstappen', 'leclerc', 'hamilton', 'norris', 'piastri', 'russell',
     'pole position', 'pole', 'qualifs', 'qualifications', 'sprint',
     'podium', 'grille de départ', 'grille de depart',
+    // Vocabulaire multilingue (en/es/it/de). « podium »/« pole » déjà présents ;
+    // termes cyrilliques (« чемпион ») écartés (on reste en alphabet latin) :
+    'qualifying', 'race highlights', 'gran premio', 'grosser preis',
+    'formula uno', 'fastest lap',
   ],
 };
 

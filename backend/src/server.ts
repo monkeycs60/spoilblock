@@ -4,6 +4,8 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { createClassifier } from './lib/classifier';
+import { createRssClient } from './lib/rss';
+import { createPublishedIndex } from './lib/publishedIndex';
 import { initPostHog, shutdownPostHog, isPostHogEnabled } from './lib/posthog';
 
 // Observabilité PostHog (LLM + events produit). No-op si POSTHOG_API_KEY absente.
@@ -18,7 +20,12 @@ const classify = createClassifier({
   apiKey: process.env.CEREBRAS_API_KEY,
 });
 
-const app = createApp({ classify });
+// Index publishedAt (RSS) partagé pour enrichir /classify. Best-effort : un échec
+// RSS ne casse jamais /classify (publishedAt:null). Le cache 10 min du RssClient
+// absorbe la charge.
+const publishedIndex = createPublishedIndex({ rssClient: createRssClient() });
+
+const app = createApp({ classify, publishedIndex });
 
 const port = Number(process.env.PORT) || 8787;
 

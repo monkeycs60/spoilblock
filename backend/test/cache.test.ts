@@ -11,9 +11,9 @@ describe('classificationKey', () => {
     expect(classificationKey(['tdf-2026'], 'v1')).toBe(`v${PROMPT_VERSION}|tdf-2026|v1`);
   });
 
-  it('utilise la version courante (2)', () => {
-    expect(PROMPT_VERSION).toBe(2);
-    expect(classificationKey(['tdf-2026'], 'v1').startsWith('v2|')).toBe(true);
+  it('utilise la version courante (3)', () => {
+    expect(PROMPT_VERSION).toBe(3);
+    expect(classificationKey(['tdf-2026'], 'v1').startsWith('v3|')).toBe(true);
   });
 
   it('trie les compétitions pour une clé stable indépendante de l\'ordre', () => {

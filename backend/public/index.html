@@ -127,7 +127,7 @@
     <div class="brand">
       <span class="shield">&#128737;</span>
       <span>SpoilGuard</span>
-      <small>feed sans spoiler</small>
+      <small id="tagline">feed sans spoiler</small>
     </div>
     <select id="competition" aria-label="Choisir une compétition"></select>
   </header>
@@ -137,7 +137,7 @@
     <ul id="feed" class="feed"></ul>
   </main>
 
-  <footer>Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.</footer>
+  <footer id="footer">Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.</footer>
 
   <div id="overlay" class="overlay" role="dialog" aria-modal="true">
     <div class="overlay-bar">
@@ -150,6 +150,69 @@
 
   <script>
     "use strict";
+
+    // i18n inline (fr/en). « fr… » → français, tout le reste → anglais (défaut
+    // international). L'attribut lang du <html> suit la locale.
+    var LOCALE = (function () {
+      var lang = "";
+      try { lang = navigator.language || (navigator.languages && navigator.languages[0]) || ""; } catch (e) {}
+      return String(lang).toLowerCase().indexOf("fr") === 0 ? "fr" : "en";
+    })();
+    document.documentElement.lang = LOCALE;
+
+    var I18N = {
+      fr: {
+        tagline: "feed sans spoiler",
+        selectAria: "Choisir une compétition",
+        close: "Fermer",
+        loading: "Chargement…",
+        loadingFeed: "Chargement du feed…",
+        footer: "Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.",
+        protected: "protégé",
+        noVideos: "Aucune vidéo récente pour cette compétition.",
+        noCompetitions: "Aucune compétition disponible.",
+        feedError: "Impossible de charger le feed ({msg}).",
+        backendError: "Backend indisponible ({msg})."
+      },
+      en: {
+        tagline: "spoiler-free feed",
+        selectAria: "Choose a competition",
+        close: "Close",
+        loading: "Loading…",
+        loadingFeed: "Loading feed…",
+        footer: "Revealing titles are hidden. Hit play with peace of mind.",
+        protected: "protected",
+        noVideos: "No recent video for this competition.",
+        noCompetitions: "No competition available.",
+        feedError: "Couldn't load the feed ({msg}).",
+        backendError: "Backend unavailable ({msg})."
+      }
+    };
+
+    function t(key, params) {
+      var s = (I18N[LOCALE] && I18N[LOCALE][key]) || I18N.en[key] || key;
+      if (params) {
+        for (var k in params) {
+          if (Object.prototype.hasOwnProperty.call(params, k)) s = s.replace("{" + k + "}", params[k]);
+        }
+      }
+      return s;
+    }
+
+    // Applique les chaînes statiques (chargées en français dans le HTML).
+    (function applyStatic() {
+      var tagline = document.getElementById("tagline");
+      if (tagline) tagline.textContent = t("tagline");
+      var footer = document.getElementById("footer");
+      if (footer) footer.textContent = t("footer");
+      var closeBtn = document.getElementById("close");
+      if (closeBtn) closeBtn.setAttribute("aria-label", t("close"));
+      var sel = document.getElementById("competition");
+      if (sel) sel.setAttribute("aria-label", t("selectAria"));
+      var status = document.getElementById("status");
+      if (status) status.textContent = t("loading");
+    })();
+
     var feedEl = document.getElementById("feed");
     var statusEl = document.getElementById("status");
     var selectEl = document.getElementById("competition");
@@ -167,24 +230,34 @@
       statusEl.className = "status" + (isError ? " error" : "");
     }
 
-    // Date relative en français (sans dépendance).
+    // Date relative, localisée (sans dépendance).
     function relativeDate(iso) {
       if (!iso) return "";
       var then = Date.parse(iso);
       if (isNaN(then)) return "";
       var s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-      if (s < 60) return "à l'instant";
       var m = Math.floor(s / 60);
-      if (m < 60) return "il y a " + m + " min";
       var h = Math.floor(m / 60);
-      if (h < 24) return "il y a " + h + " h";
       var d = Math.floor(h / 24);
-      if (d < 7) return "il y a " + d + (d > 1 ? " jours" : " jour");
       var w = Math.floor(d / 7);
-      if (w < 5) return "il y a " + w + (w > 1 ? " semaines" : " semaine");
       var mo = Math.floor(d / 30);
-      if (mo < 12) return "il y a " + mo + " mois";
-      return "il y a " + Math.floor(d / 365) + " an(s)";
+      var y = Math.floor(d / 365);
+      if (LOCALE === "fr") {
+        if (s < 60) return "à l'instant";
+        if (m < 60) return "il y a " + m + " min";
+        if (h < 24) return "il y a " + h + " h";
+        if (d < 7) return "il y a " + d + (d > 1 ? " jours" : " jour");
+        if (w < 5) return "il y a " + w + (w > 1 ? " semaines" : " semaine");
+        if (mo < 12) return "il y a " + mo + " mois";
+        return "il y a " + y + " an" + (y > 1 ? "s" : "");
+      }
+      if (s < 60) return "just now";
+      if (m < 60) return m + " min ago";
+      if (h < 24) return h + " h ago";
+      if (d < 7) return d + (d > 1 ? " days" : " day") + " ago";
+      if (w < 5) return w + (w > 1 ? " weeks" : " week") + " ago";
+      if (mo < 12) return mo + (mo > 1 ? " months" : " month") + " ago";
+      return y + (y > 1 ? " years" : " year") + " ago";
     }
 
     function esc(s) {
@@ -217,7 +290,7 @@
     function renderVideos(videos) {
       feedEl.innerHTML = "";
       if (!videos || videos.length === 0) {
-        setStatus("Aucune vidéo récente pour cette compétition.", false);
+        setStatus(t("noVideos"), false);
         return;
       }
       setStatus("", false);
@@ -250,7 +323,7 @@
           thumbHtml +
           '<div class="body">' +
             '<div class="meta">' +
-              '<span class="badge protected">&#128737; protégé</span>' +
+              '<span class="badge protected">&#128737; ' + esc(t("protected")) + '</span>' +
               '<span class="dot"></span>' +
               '<span>' + esc(v.channel) + '</span>' +
               '<span class="dot"></span>' +
@@ -267,7 +340,7 @@
 
     function loadFeed(id) {
       currentEmoji = competitionEmoji[id] || "🛡";
-      setStatus("Chargement du feed…", false);
+      setStatus(t("loadingFeed"), false);
       feedEl.innerHTML = "";
       fetch("/feed/" + encodeURIComponent(id))
         .then(function (r) {
@@ -275,7 +348,7 @@
           return r.json();
         })
         .then(function (data) { renderVideos(data.videos || []); })
-        .catch(function (e) { setStatus("Impossible de charger le feed (" + e.message + ").", true); });
+        .catch(function (e) { setStatus(t("feedError", { msg: e.message }), true); });
     }
 
     function init() {
@@ -287,7 +360,7 @@
           var comps = (data.competitions || []).filter(function (c) {
             return c.active && c.feedAvailable !== false;
           });
-          if (comps.length === 0) { setStatus("Aucune compétition disponible.", true); return; }
+          if (comps.length === 0) { setStatus(t("noCompetitions"), true); return; }
           comps.forEach(function (c) {
             if (c.emoji) competitionEmoji[c.id] = c.emoji;
             var opt = document.createElement("option");
@@ -298,7 +371,7 @@
           selectEl.addEventListener("change", function () { loadFeed(selectEl.value); });
           loadFeed(comps[0].id);
         })
-        .catch(function (e) { setStatus("Backend indisponible (" + e.message + ").", true); });
+        .catch(function (e) { setStatus(t("backendError", { msg: e.message }), true); });
     }
 
     init();

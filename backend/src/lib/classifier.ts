@@ -34,7 +34,7 @@ export const DEFAULT_MODEL_ID = 'gpt-oss-120b';
  * des verdicts erronés d'une version précédente resteraient servis. Intégrée à la
  * clé de cache (`classificationKey`, cache.ts) sous la forme `v{N}|…`.
  */
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 // Schéma strict imposé au LLM. On enveloppe le tableau dans un objet `results`
 // (plus fiable que le mode array brut sur certains providers).
@@ -99,12 +99,12 @@ N'est PAS un spoiler (spoiler=false) :
 
 En cas de doute sur une vidéo liée à une compétition suivie → spoiler=true (prudence).
 
-Pour chaque vidéo avec spoiler=true, rédige un safeTitle EN FRANÇAIS qui :
+Pour chaque vidéo avec spoiler=true, rédige un safeTitle DANS LA LANGUE DU TITRE D'ORIGINE (titre anglais → safeTitle anglais ; titre espagnol → safeTitle espagnol ; titre français → safeTitle français ; etc.) qui :
 - conserve la compétition, l'étape/journée et le TYPE de contenu ;
 - NE donne AUCUN indice de résultat (ni nom de vainqueur/équipe dominante, ni classement, ni ton révélateur) ;
 - est préfixé de l'emoji de la compétition concernée.
 
-TYPE DE CONTENU (choisis le bon mot — l'utilisateur cherche LE format qu'il veut regarder) :
+TYPE DE CONTENU (choisis le bon FORMAT — l'utilisateur cherche LE format qu'il veut regarder ; exprime son libellé DANS LA LANGUE DU TITRE, ex. en anglais : « Stage N Highlights », « Stage N Summary », « Analysis ») :
 - « Résumé étape N » = DÉFAUT pour toute vidéo POST-course qui MONTRE la course : résumé, temps forts, highlights, « le film de l'étape », « revivez l'étape ». Dans le doute entre les formats, choisis « Résumé ».
 - « Résumé long étape N » UNIQUEMENT si le titre indique une version longue/intégrale (« résumé long », « version longue », « intégrale »).
 - « Temps forts étape N » UNIQUEMENT si le titre dit explicitement « temps forts » / « highlights ».
@@ -117,6 +117,7 @@ EXEMPLES (AVANT le titre réel → APRÈS le safeTitle attendu) :
 - « Tour de France 2026 : UAE Emirates XRG en DÉMONSTRATION à Barcelone (résumé de l'étape 2) » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Résumé étape 2" (équipe en démonstration = résultat révélé ; c'est un résumé, PAS une analyse).
 - « TOUR DE FRANCE 2026 - INSOLENTS ! Tadej Pogacar OFFRE LA VICTOIRE à Isaac Del Toro sur l'étape 2 » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Résumé étape 2" (« offre la victoire » = vainqueur révélé ; temps forts d'étape = Résumé, PAS Analyse).
 - « Tour de France 2026 – Débrief étape 2 : on refait la course au micro » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Analyse étape 2" (débrief/plateau = Analyse).
+- « Stage 2 Highlights - INSANE finish as UAE dominates! » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Stage 2 Highlights" (titre EN → safeTitle EN ; on retire le résultat « UAE dominates » et le ton « INSANE », on garde le format highlights dans la langue d'origine).
 - « Le parcours du Tour de France 2026 dévoilé » → spoiler=false, safeTitle=null (annonce neutre avant course, aucun résultat).
 
 Réponds STRICTEMENT avec un objet { results: [...] } contenant une entrée par vidéo, avec le même videoId.

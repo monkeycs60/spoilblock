@@ -135,7 +135,76 @@ describe('POST /classify — fallback + safeTitle générique', () => {
       videos: [{ videoId: 'v1', title: 'Recette de crêpes' }],
     });
     const body = await res.json() as any;
-    expect(body.results[0]).toEqual({ videoId: 'v1', spoiler: false, safeTitle: null });
+    // publishedAt:null quand aucun index n'est branché (best-effort).
+    expect(body.results[0]).toEqual({ videoId: 'v1', spoiler: false, safeTitle: null, publishedAt: null });
+  });
+});
+
+describe('POST /classify — publishedAt (index RSS)', () => {
+  const classify: ClassifyFn = async (_c, videos) =>
+    videos.map((v) => ({ videoId: v.videoId, spoiler: false, safeTitle: null }));
+
+  it('renvoie publishedAt quand l\'index connaît la vidéo, null sinon', async () => {
+    const publishedIndex = {
+      lookup: async (ids: string[]) => {
+        const map = new Map<string, string>();
+        if (ids.includes('known')) map.set('known', '2026-07-05T18:00:00Z');
+        return map;
+      },
+    };
+    const app = createApp({ classify, publishedIndex });
+
+    const res = await post(app, {
+      competitions: ['tdf-2026'],
+      videos: [{ videoId: 'known', title: 't1' }, { videoId: 'unknown', title: 't2' }],
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    const byId = Object.fromEntries(body.results.map((r: any) => [r.videoId, r.publishedAt]));
+    expect(byId.known).toBe('2026-07-05T18:00:00Z');
+    expect(byId.unknown).toBeNull();
+  });
+
+  it('publishedAt:null partout si l\'index échoue (best-effort strict, /classify ne casse pas)', async () => {
+    const publishedIndex = {
+      lookup: async () => {
+        throw new Error('rss boom');
+      },
+    };
+    const app = createApp({ classify, publishedIndex });
+
+    const res = await post(app, {
+      competitions: ['tdf-2026'],
+      videos: [{ videoId: 'v1', title: 't1' }],
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.results[0].publishedAt).toBeNull();
+  });
+
+  it('publishedAt TOUJOURS recalculé à la réponse, jamais servi depuis le cache', async () => {
+    // 1er appel : index vide. 2e appel (servi par le cache de classification) :
+    // l'index connaît la vidéo → publishedAt doit apparaître malgré le cache hit.
+    let known = false;
+    const publishedIndex = {
+      lookup: async (ids: string[]) => {
+        const map = new Map<string, string>();
+        if (known && ids.includes('v1')) map.set('v1', '2026-07-05T20:00:00Z');
+        return map;
+      },
+    };
+    const cache = new TTLCache<Classification>();
+    const app = createApp({ classify, cache, publishedIndex });
+    const body = { competitions: ['tdf-2026'], videos: [{ videoId: 'v1', title: 't' }] };
+
+    const r1 = await post(app, body);
+    expect(((await r1.json()) as any).results[0].publishedAt).toBeNull();
+
+    known = true;
+    const r2 = await post(app, body);
+    // Cache hit sur la classification, mais publishedAt frais.
+    expect(r2.headers.get('X-Cache-Hits')).toBe('1');
+    expect(((await r2.json()) as any).results[0].publishedAt).toBe('2026-07-05T20:00:00Z');
   });
 });
 
