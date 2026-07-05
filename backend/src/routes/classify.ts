@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { TTLCache, classificationKey } from '../lib/cache';
 import { createRateLimiter, type RateLimiter } from '../lib/rateLimit';
 import { resolveCompetitions } from '../data/competitions';
+import { captureServerEvent, BACKEND_DISTINCT_ID } from '../lib/posthog';
 import type { Classification, ClassifyFn, Video } from '../lib/classifier';
 
 const videoSchema = z.object({
@@ -117,6 +118,14 @@ export function createClassifyRoute(deps: ClassifyRouteDeps) {
     // Instrumentation pour le logger serveur.
     c.header('X-Cache-Hits', String(videos.length - misses.length));
     c.header('X-Cache-Misses', String(misses.length));
+
+    // Event produit (compteurs uniquement — aucun titre, privacy).
+    captureServerEvent('classify_batch', BACKEND_DISTINCT_ID, {
+      competitions,
+      hits: videos.length - misses.length,
+      misses: misses.length,
+      source: 'extension',
+    });
 
     return c.json({ results });
   });

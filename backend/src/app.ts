@@ -3,6 +3,7 @@
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -76,6 +77,31 @@ export function createApp(deps: AppDeps) {
       feedCache: deps.feedCache,
     })
   );
+
+  // Landing marketing servie sur /landing depuis le fichier source du repo
+  // (spoilguard/landing/index.html) — PAS de duplication dans public/. Chemin
+  // ABSOLU résolu depuis import.meta.url (backend/src → ../../landing) pour être
+  // indépendant du dossier de lancement. Cache mémoire 5 min.
+  // Enregistré AVANT le static '/*' : Hono compose dans l'ordre, /landing gagne.
+  const landingFile = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../landing/index.html'
+  );
+  const LANDING_TTL_MS = 5 * 60 * 1000;
+  let landingCache: { html: string; expires: number } | null = null;
+  app.get('/landing', async (c) => {
+    const now = Date.now();
+    if (!landingCache || landingCache.expires <= now) {
+      try {
+        const html = await readFile(landingFile, 'utf8');
+        landingCache = { html, expires: now + LANDING_TTL_MS };
+      } catch (error) {
+        console.error('[landing] lecture échouée :', error);
+        return c.text('Landing indisponible', 500);
+      }
+    }
+    return c.html(landingCache.html);
+  });
 
   // Companion web app (Phase 3) : servie en statique sur / depuis backend/public/.
   // Enregistré APRÈS les routes API : leurs handlers répondent avant ce middleware

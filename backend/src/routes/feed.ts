@@ -15,6 +15,7 @@ import { TTLCache, classificationKey } from '../lib/cache';
 import { createRateLimiter, type RateLimiter } from '../lib/rateLimit';
 import { getCompetition, type Competition } from '../data/competitions';
 import { createRssClient, resolveChannelId, type RssEntry } from '../lib/rss';
+import { captureServerEvent, BACKEND_DISTINCT_ID } from '../lib/posthog';
 import type { Classification, ClassifyFn, Video } from '../lib/classifier';
 
 /** Une vidéo telle que renvoyée par /feed (jamais de titre original révélable). */
@@ -27,6 +28,13 @@ export type FeedVideo = {
 
 export type FeedResponse = { videos: FeedVideo[] };
 
+/**
+ * Valeur mise en cache : la réponse publique + le nombre de spoilers voilés
+ * (compteur interne, jamais exposé au client) pour émettre `feed_served` avec un
+ * décompte exact même sur un cache hit.
+ */
+type CachedFeed = { response: FeedResponse; spoilers: number };
+
 export type FeedRouteDeps = {
   /** Même classifieur que /classify (injecté via app.ts). */
   classify: ClassifyFn;
@@ -38,7 +46,7 @@ export type FeedRouteDeps = {
   /** Récupération des entrées d'une chaîne (injectable pour mock RSS en test). */
   fetchChannelFeed?: (channelId: string) => Promise<RssEntry[]>;
   /** Cache de la réponse assemblée (par competitionId, TTL 10 min). */
-  feedCache?: TTLCache<FeedResponse>;
+  feedCache?: TTLCache<CachedFeed>;
 };
 
 /** Nombre max de vidéos renvoyées (aligné sur la limite de batch classify). */
@@ -68,7 +76,7 @@ export function createFeedRoute(deps: FeedRouteDeps) {
   const cache = deps.cache ?? new TTLCache<Classification>();
   const rateLimiter =
     deps.rateLimiter ?? createRateLimiter(deps.rateLimit ?? { limit: 60, windowMs: 60_000 });
-  const feedCache = deps.feedCache ?? new TTLCache<FeedResponse>({ ttlMs: FEED_TTL_MS });
+  const feedCache = deps.feedCache ?? new TTLCache<CachedFeed>({ ttlMs: FEED_TTL_MS });
   const fetchChannelFeed =
     deps.fetchChannelFeed ?? createRssClient().fetchChannelFeed;
 
@@ -87,10 +95,15 @@ export function createFeedRoute(deps: FeedRouteDeps) {
     }
 
     // Réponse assemblée en cache 10 min.
-    const cachedResponse = feedCache.get(competitionId);
-    if (cachedResponse) {
+    const cached = feedCache.get(competitionId);
+    if (cached) {
       c.header('X-Feed-Cache', 'hit');
-      return c.json(cachedResponse);
+      captureServerEvent('feed_served', BACKEND_DISTINCT_ID, {
+        competitionId,
+        videos: cached.response.videos.length,
+        spoilers: cached.spoilers,
+      });
+      return c.json(cached.response);
     }
 
     // 1. Résolution des chaînes → channelIds (dédupliqués, ignore les inconnues).
@@ -135,13 +148,23 @@ export function createFeedRoute(deps: FeedRouteDeps) {
       }
     }
 
+    // Event produit : le passage LLM déclenché par ce feed (compteurs seulement).
+    captureServerEvent('classify_batch', BACKEND_DISTINCT_ID, {
+      competitions: [competitionId],
+      hits: sorted.length - misses.length,
+      misses: misses.length,
+      source: 'feed',
+    });
+
     // 5. Assemblage SANS jamais exposer le titre original d'un spoiler.
+    let spoilers = 0;
     const videos: FeedVideo[] = sorted.map((e) => {
       const r =
         classifications.get(e.videoId) ??
         ({ videoId: e.videoId, spoiler: true, safeTitle: null } as Classification);
 
       if (r.spoiler) {
+        spoilers += 1;
         const raw = r.safeTitle ?? genericSafeTitle(comp);
         return {
           videoId: e.videoId,
@@ -160,8 +183,13 @@ export function createFeedRoute(deps: FeedRouteDeps) {
     });
 
     const response: FeedResponse = { videos };
-    feedCache.set(competitionId, response, FEED_TTL_MS);
+    feedCache.set(competitionId, { response, spoilers }, FEED_TTL_MS);
     c.header('X-Feed-Cache', 'miss');
+    captureServerEvent('feed_served', BACKEND_DISTINCT_ID, {
+      competitionId,
+      videos: videos.length,
+      spoilers,
+    });
     return c.json(response);
   });
 

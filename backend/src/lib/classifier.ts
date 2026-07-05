@@ -6,7 +6,10 @@
 import { z } from 'zod';
 import { generateObject as defaultGenerateObject } from 'ai';
 import { createCerebras } from '@ai-sdk/cerebras';
+import { withTracing } from '@posthog/ai/vercel';
+import type { PostHog } from 'posthog-node';
 import { resolveCompetitions, type Competition } from '../data/competitions';
+import { getPostHog, aiTracingOptions, BACKEND_DISTINCT_ID } from './posthog';
 
 export type Video = { videoId: string; title: string; channel?: string };
 export type Classification = {
@@ -115,6 +118,12 @@ export type ClassifierOptions = {
   model?: unknown;
   /** Implémentation de generateObject injectable (pour tests). */
   generateObjectImpl?: GenerateObjectImpl;
+  /**
+   * Client PostHog pour tracer chaque appel LLM (`$ai_generation`).
+   * Défaut : client global (`getPostHog()`) résolu paresseusement.
+   * `null` désactive explicitement le tracing (tests).
+   */
+  postHog?: PostHog | null;
 };
 
 /**
@@ -145,6 +154,36 @@ export function createClassifier(options: ClassifierOptions = {}): ClassifyFn {
     return resolvedModel;
   };
 
+  // Enveloppe le modèle avec `withTracing` pour émettre un `$ai_generation`
+  // (coût/tokens/latence/erreurs) à chaque appel. Best-effort : si PostHog est
+  // désactivé ou si le wrap échoue, on renvoie le modèle brut — l'appel LLM ne
+  // doit JAMAIS être cassé par l'observabilité.
+  const traceModel = (
+    model: unknown,
+    competitionIds: string[],
+    batchSize: number
+  ): unknown => {
+    const ph = options.postHog !== undefined ? options.postHog : getPostHog();
+    if (!model || !ph) return model;
+    try {
+      return withTracing(
+        model as Parameters<typeof withTracing>[0],
+        ph,
+        aiTracingOptions({
+          distinctId: BACKEND_DISTINCT_ID,
+          properties: {
+            // Métadonnées uniquement — jamais de titre (privacy).
+            batch_size: batchSize,
+            competitions: competitionIds,
+          },
+        })
+      );
+    } catch (error) {
+      console.error('[PostHog] withTracing échoué, modèle non tracé :', error);
+      return model;
+    }
+  };
+
   return async function classify(competitionIds, videos) {
     if (videos.length === 0) return [];
 
@@ -153,7 +192,7 @@ export function createClassifier(options: ClassifierOptions = {}): ClassifyFn {
 
     const runOnce = () =>
       generate({
-        model: getModel(),
+        model: traceModel(getModel(), competitionIds, videos.length),
         schema: classificationSchema,
         prompt,
         temperature: 0,
