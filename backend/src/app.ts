@@ -78,27 +78,36 @@ export function createApp(deps: AppDeps) {
     })
   );
 
-  // Landing marketing servie sur /landing depuis le fichier source du repo
-  // (spoilguard/landing/index.html) — PAS de duplication dans public/. Chemin
-  // ABSOLU résolu depuis import.meta.url (backend/src → ../../landing) pour être
-  // indépendant du dossier de lancement. Cache mémoire 5 min.
+  // Landing marketing servie sur /landing. Deux emplacements possibles :
+  // - repo complet (dev local) : spoilguard/landing/index.html (source de vérité) ;
+  // - conteneur Coolify (Base Directory /backend) : le repo au-dessus n'existe PAS →
+  //   repli sur la copie committée backend/public/landing/index.html (synchro via
+  //   `npm run sync-landing` à la racine). Cache mémoire 5 min.
   // Enregistré AVANT le static '/*' : Hono compose dans l'ordre, /landing gagne.
-  const landingFile = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '../../landing/index.html'
-  );
+  const srcDir = path.dirname(fileURLToPath(import.meta.url));
+  const landingCandidates = [
+    path.resolve(srcDir, '../../landing/index.html'),
+    path.resolve(srcDir, '../public/landing/index.html'),
+  ];
   const LANDING_TTL_MS = 5 * 60 * 1000;
   let landingCache: { html: string; expires: number } | null = null;
   app.get('/landing', async (c) => {
     const now = Date.now();
     if (!landingCache || landingCache.expires <= now) {
-      try {
-        const html = await readFile(landingFile, 'utf8');
-        landingCache = { html, expires: now + LANDING_TTL_MS };
-      } catch (error) {
-        console.error('[landing] lecture échouée :', error);
+      let html: string | null = null;
+      for (const file of landingCandidates) {
+        try {
+          html = await readFile(file, 'utf8');
+          break;
+        } catch {
+          /* candidat suivant */
+        }
+      }
+      if (html === null) {
+        console.error('[landing] introuvable dans', landingCandidates);
         return c.text('Landing indisponible', 500);
       }
+      landingCache = { html, expires: now + LANDING_TTL_MS };
     }
     return c.html(landingCache.html);
   });
