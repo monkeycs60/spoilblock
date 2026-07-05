@@ -72,6 +72,79 @@ const processed = new WeakSet();
 // et de le détacher proprement au reset/à la révélation.
 const dblHandlers = new WeakMap();
 
+// --- État consolidé par carte (source de vérité) ----------------------------------
+// Un SEUL objet d'état par carte dans un WeakMap remplace les ~9 canaux data-* qui
+// vivaient sur la carte et sur son titre. Forme :
+//   { status:'veiled'|'clean'|'revealed', videoId,
+//     original:{ title, aria, hadAria },   // titre/aria d'origine (restaurés à la révélation)
+//     safeTitle,                           // titre neutre injecté (marqueur « notre voile »)
+//     sig,                                 // signature anti-boucle (titre stable courant)
+//     age,                                 // âge affiché au moment du voile
+//     backend:bool,                        // retitrée par le backend ?
+//     revealedTitle }                      // vrai titre au moment de la révélation
+// Deux data-* seulement subsistent dans le DOM : data-spoilguard (status, pour le
+// querySelectorAll de rescanAll + le debug ; le CSS, lui, ne cible que des CLASSES) et
+// data-spoilguard-video-id (registre des ids voilés, géré par add/removeVeiledId).
+const cardState = new WeakMap();
+
+// Lecture de l'état. Si le WeakMap est vide mais que la carte porte encore data-spoilguard
+// (contexte du content script recréé alors que le DOM voilé/révélé survit), on réhydrate un
+// état minimal depuis l'attribut pour continuer à respecter le statut — et, pour une carte
+// révélée, sa révélation (on adopte le titre affiché, qui EST le vrai titre d'une révélée).
+function getCardState(card) {
+  let st = cardState.get(card);
+  if (st) return st;
+  const domStatus = card.getAttribute('data-spoilguard');
+  if (!domStatus) return null;
+  st = { status: domStatus };
+  if (domStatus === 'revealed') {
+    st.revealedTitle = (findTitleEl(card)?.textContent || '').trim();
+  }
+  cardState.set(card, st);
+  return st;
+}
+
+// Écriture par patch (fusion superficielle). Reflète le seul champ `status` en attribut
+// data-spoilguard (CSS/debug + repérage par rescanAll).
+function setCardState(card, patch) {
+  const next = Object.assign({}, cardState.get(card) || {}, patch);
+  cardState.set(card, next);
+  if ('status' in patch) {
+    if (patch.status) card.setAttribute('data-spoilguard', patch.status);
+    else card.removeAttribute('data-spoilguard');
+  }
+  return next;
+}
+
+// Efface tout l'état d'une carte (recyclage YouTube).
+function clearCardState(card) {
+  cardState.delete(card);
+  card.removeAttribute('data-spoilguard');
+}
+
+// Ids déjà signalés au SW pour le compteur, à l'échelle de CETTE session de page. Le SW
+// fait la dédup journalière autoritaire ; ce filtre local évite juste d'inonder le canal
+// quand une carte recycle plusieurs fois le même id.
+const reportedBlockedIds = new Set();
+
+// Signale au service worker le blocage EFFECTIF d'une vidéo (1re fois pour ce videoId).
+// Fire-and-forget : le SW maintient le compteur du jour + le badge. La pseudo-carte /watch
+// (videoId sentinelle 'watch') est exclue (pas une carte de résultat comptabilisable).
+function reportBlocked(videoId) {
+  if (!videoId || videoId === 'watch') return;
+  if (reportedBlockedIds.has(videoId)) return;
+  reportedBlockedIds.add(videoId);
+  const rt = globalThis.chrome && chrome.runtime;
+  if (!rt || typeof rt.sendMessage !== 'function') return;
+  try {
+    rt.sendMessage({ type: 'blocked', videoId }, () => {
+      void rt.lastError; // lire lastError → pas de warning console si aucun récepteur
+    });
+  } catch {
+    /* contexte d'extension invalidé (rechargement) → silencieux */
+  }
+}
+
 // Registre des videoIds ACTUELLEMENT voilés. Sert aux fuites HORS carte : YouTube joue
 // une preview vidéo (miniature + 1res secondes) dans un élément GLOBAL positionné
 // par-dessus la carte, hors de sa portée CSS scopée ; on ne peut la bloquer qu'en
@@ -134,24 +207,22 @@ function detachReveal(card) {
 //                       retire simplement notre aria (le nom accessible retombe sur le
 //                       nouveau texte, avant que processCard ne re-voile si besoin).
 function stripVeil(card, titleEl, restoreText) {
+  const st = getCardState(card) || {};
+  const orig = st.original;
   const el = titleEl || findTitleEl(card);
   if (el) {
-    if (restoreText && el.dataset.spoilguardOriginal != null) {
-      el.textContent = el.dataset.spoilguardOriginal;
+    if (restoreText && orig && orig.title != null) {
+      el.textContent = orig.title;
     }
-    if (el.dataset.spoilguardAriaHad != null) {
-      if (restoreText && el.dataset.spoilguardAriaHad === '1') {
-        el.setAttribute('aria-label', el.dataset.spoilguardAriaOriginal ?? '');
+    if (orig && orig.hadAria != null) {
+      if (restoreText && orig.hadAria) {
+        el.setAttribute('aria-label', orig.aria ?? '');
       } else {
         el.removeAttribute('aria-label');
       }
-      delete el.dataset.spoilguardAriaHad;
-      delete el.dataset.spoilguardAriaOriginal;
     }
     el.classList.remove('spoilguard-safe-title');
     el.removeAttribute('title');
-    delete el.dataset.spoilguardOriginal;
-    delete el.dataset.spoilguardSafe;
   }
   card.classList.remove('spoilguard-veiled');
   detachReveal(card);
@@ -159,6 +230,9 @@ function stripVeil(card, titleEl, restoreText) {
   // éventuelle preview globale la concernant). backendRetitle ne passe PAS ici (la carte
   // reste voilée) donc son id reste bien dans le registre.
   removeVeiledId(card);
+  // Efface les champs de voile de l'état (titre/aria d'origine + titre neutre injecté).
+  // Le statut est réglé par l'appelant (reveal → 'revealed', fullReset → effacé, etc.).
+  setCardState(card, { original: undefined, safeTitle: undefined });
 }
 
 // Révélation par l'utilisateur : on découvre le vrai titre et on marque la carte
@@ -167,9 +241,10 @@ function stripVeil(card, titleEl, restoreText) {
 function reveal(card, titleEl) {
   const el = titleEl || findTitleEl(card);
   stripVeil(card, el, true);
-  card.dataset.spoilguardRevealed = '1';
-  card.dataset.spoilguardRevealedTitle = (el?.textContent || '').trim();
-  card.setAttribute('data-spoilguard', 'revealed');
+  setCardState(card, {
+    status: 'revealed',
+    revealedTitle: (el?.textContent || '').trim(),
+  });
 }
 
 // Reset complet : carte recyclée pour une autre vidéo. On efface tout état (WeakSet,
@@ -178,12 +253,7 @@ function reveal(card, titleEl) {
 function fullReset(card) {
   stripVeil(card, findTitleEl(card), false);
   processed.delete(card);
-  card.removeAttribute('data-spoilguard');
-  delete card.dataset.spoilguardSig;
-  delete card.dataset.spoilguardAge;
-  delete card.dataset.spoilguardRevealed;
-  delete card.dataset.spoilguardRevealedTitle;
-  delete card.dataset.spoilguardBackend;
+  clearCardState(card);
 }
 
 function veil(card, info) {
@@ -191,40 +261,50 @@ function veil(card, info) {
   const titleEl = info.titleEl;
   if (!titleEl) return;
 
-  if (titleEl.dataset.spoilguardOriginal == null) {
-    titleEl.dataset.spoilguardOriginal = info.title;
+  const st = getCardState(card) || {};
+  // Sauvegarde du titre + de l'aria-label d'origine, une seule fois (ne pas écraser avec
+  // notre propre titre neutre si la carte est déjà voilée). Sans neutralisation de l'aria,
+  // le vrai titre fuite aux lecteurs d'écran (nom accessible de l'ancre) malgré le voile.
+  let original = st.original;
+  if (original == null) {
+    const origAria = titleEl.getAttribute('aria-label');
+    original = {
+      title: info.title,
+      aria: origAria != null ? origAria : undefined,
+      hadAria: origAria != null,
+    };
   }
   const safe = buildLocalSafeTitle(pickVeilPack(state.packs, info), info.ageText);
-  // On mémorise le texte injecté : sert de signature pour distinguer NOTRE écriture
-  // (à ignorer) d'un vrai changement de titre par YouTube (recyclage → re-traiter).
-  titleEl.dataset.spoilguardSafe = safe;
-  // Sauvegarde de l'aria-label d'origine puis neutralisation : sans ça le vrai titre
-  // fuite aux lecteurs d'écran (le nom accessible de l'ancre) malgré le voile visuel.
-  if (titleEl.dataset.spoilguardAriaHad == null) {
-    const origAria = titleEl.getAttribute('aria-label');
-    if (origAria != null) titleEl.dataset.spoilguardAriaOriginal = origAria;
-    titleEl.dataset.spoilguardAriaHad = origAria != null ? '1' : '0';
-  }
   titleEl.setAttribute('aria-label', safe);
   titleEl.textContent = safe;
   titleEl.classList.add('spoilguard-safe-title');
   titleEl.title = 'SpoilGuard — double-clic pour révéler';
-  // Mémorise l'âge utilisé pour la décision : permet de détecter, quand les
-  // métadonnées arrivent après coup, que l'âge réel diffère (correctif sur-voile).
-  card.dataset.spoilguardAge = info.ageText ?? '';
+  // safeTitle : sert de marqueur « notre voile » et de signature pour distinguer NOTRE
+  // écriture (à ignorer) d'un vrai changement de titre par YouTube (recyclage → retraiter).
+  // age : âge utilisé pour la décision → détecte l'arrivée tardive d'un âge réel différent.
+  setCardState(card, {
+    original,
+    safeTitle: safe,
+    age: info.ageText ?? '',
+    videoId: info.videoId,
+    backend: false,
+  });
   attachReveal(card, titleEl);
   // Enregistre le videoId voilé pour bloquer les fuites hors carte (preview globale,
   // mur de fin de lecture) qui afficheraient cette vidéo par-dessus/hors de la carte.
   addVeiledId(card, info.videoId);
+  // Compteur : signale ce blocage au SW (dédup + badge côté service worker).
+  reportBlocked(info.videoId);
 }
 
 function processCard(card) {
   if (processed.has(card)) return;
-  // Carte révélée mais hors WeakSet (nav SPA : le DOM survit, le WeakSet non).
-  // On respecte la révélation tant que la vidéo n'a pas changé ; sinon recyclage.
-  if (card.dataset.spoilguardRevealed === '1') {
+  // Carte révélée mais hors WeakMap (contexte content-script recréé : le DOM survit, l'état
+  // JS non). On respecte la révélation tant que la vidéo n'a pas changé ; sinon recyclage.
+  const st = getCardState(card);
+  if (st && st.status === 'revealed') {
     const current = (findTitleEl(card)?.textContent || '').trim();
-    if (current === (card.dataset.spoilguardRevealedTitle || '')) return;
+    if (current === (st.revealedTitle || '')) return;
     fullReset(card);
   }
   const info = extractAny(card);
@@ -233,23 +313,25 @@ function processCard(card) {
   // pas la carte comme traitée, pour qu'elle soit re-voilée dès la reprise (prochain
   // scan / mutation), sans reload.
   if (!veilingEnabled(state)) {
-    card.setAttribute('data-spoilguard', 'clean');
-    card.dataset.spoilguardSig = (findTitleEl(card)?.textContent || '').trim();
+    setCardState(card, {
+      status: 'clean',
+      sig: (findTitleEl(card)?.textContent || '').trim(),
+    });
     return;
   }
   processed.add(card);
   if (shouldVeil(info, state.merged)) {
     veil(card, info);
-    card.setAttribute('data-spoilguard', 'veiled');
+    setCardState(card, { status: 'veiled' });
     // Le pré-filtre a voilé par prudence : on demande l'avis du backend (async). En
     // attendant, et si le backend est indisponible, le voile générique reste (Phase 1).
     requestBackendClassification(card, info);
   } else {
-    card.setAttribute('data-spoilguard', 'clean');
+    setCardState(card, { status: 'clean' });
   }
   // Signature de l'état stable : titre voilé injecté (voilée) ou titre d'origine
   // (clean). Sert de référence anti-boucle / détection de recyclage côté observer.
-  card.dataset.spoilguardSig = (findTitleEl(card)?.textContent || '').trim();
+  setCardState(card, { sig: (findTitleEl(card)?.textContent || '').trim() });
 }
 
 // Appelé quand une mutation (childList ou characterData) touche une carte déjà vue.
@@ -257,12 +339,13 @@ function processCard(card) {
 // l'effet DOM correspondant.
 function reprocessCard(card) {
   const titleEl = findTitleEl(card);
+  const st = getCardState(card) || {};
   const decision = decideReprocess({
     isProcessed: processed.has(card),
     currentTitle: (titleEl?.textContent || '').trim(),
-    safeTitle: card.dataset.spoilguardSig || '',
-    revealed: card.dataset.spoilguardRevealed === '1',
-    revealedTitle: card.dataset.spoilguardRevealedTitle || '',
+    safeTitle: st.sig || '',
+    revealed: st.status === 'revealed',
+    revealedTitle: st.revealedTitle || '',
   });
   if (decision === 'ignore') {
     // La carte est stable pour decideReprocess, MAIS si elle est voilée son âge a pu
@@ -282,20 +365,21 @@ function reprocessCard(card) {
 // rejoue shouldVeil : dé-voile complet si la vidéo n'est en fait pas récente, sinon
 // simple rafraîchissement du titre neutre (l'âge affiché a changé).
 function maybeUpdateVeiledAge(card, titleEl) {
-  if (card.dataset.spoilguard !== 'veiled') return;
+  const st = getCardState(card);
+  if (!st || st.status !== 'veiled') return;
   // Carte déjà retitrée par le backend (titre neutre riche) : ne pas la réécrire avec
   // le titre générique local sur simple arrivée d'âge — le backend fait autorité.
-  if (card.dataset.spoilguardBackend === '1') return;
+  if (st.backend) return;
   const el = titleEl || findTitleEl(card);
-  if (!el || el.dataset.spoilguardSafe == null) return; // pas (ou plus) notre voile
+  if (!el || st.safeTitle == null) return; // pas (ou plus) notre voile
   const info = extractAny(card);
   const verdict = decideAgeUpdate({
-    storedAge: card.dataset.spoilguardAge || '',
+    storedAge: st.age || '',
     newAge: info.ageText,
   });
   if (verdict !== 'reevaluate') return;
 
-  const original = el.dataset.spoilguardOriginal ?? info.title;
+  const original = st.original && st.original.title != null ? st.original.title : info.title;
   const stillVeil = shouldVeil(
     { channel: info.channel, ageText: info.ageText, title: original },
     state.merged,
@@ -304,18 +388,18 @@ function maybeUpdateVeiledAge(card, titleEl) {
     // Faux positif : la vidéo n'est pas récente → dé-voile complet, carte clean.
     stripVeil(card, el, true);
     processed.add(card); // reste traitée : ne pas re-voiler à la prochaine mutation
-    card.setAttribute('data-spoilguard', 'clean');
-    card.dataset.spoilguardSig = (findTitleEl(card)?.textContent || '').trim();
-    delete card.dataset.spoilguardAge;
+    setCardState(card, {
+      status: 'clean',
+      sig: (findTitleEl(card)?.textContent || '').trim(),
+      age: undefined,
+    });
   } else {
     // Toujours à voiler mais l'âge affiché a changé → rafraîchir le titre neutre,
     // la signature anti-boucle et l'âge stocké (sinon rejeu à l'infini).
     const safe = buildLocalSafeTitle(pickVeilPack(state.packs, info), info.ageText);
-    el.dataset.spoilguardSafe = safe;
     el.setAttribute('aria-label', safe);
     el.textContent = safe;
-    card.dataset.spoilguardSig = safe;
-    card.dataset.spoilguardAge = info.ageText ?? '';
+    setCardState(card, { safeTitle: safe, sig: safe, age: info.ageText ?? '' });
   }
 }
 
@@ -368,11 +452,9 @@ function requestBackendClassification(card, info) {
 // révélée, recyclée ou dé-voilée depuis l'envoi).
 function applyBackendResult(card, result) {
   const titleEl = findTitleEl(card);
-  const veiled =
-    card.dataset.spoilguard === 'veiled' &&
-    titleEl != null &&
-    titleEl.dataset.spoilguardSafe != null;
-  const revealed = card.dataset.spoilguardRevealed === '1';
+  const st = getCardState(card) || {};
+  const veiled = st.status === 'veiled' && titleEl != null && st.safeTitle != null;
+  const revealed = st.status === 'revealed';
   const currentVideoId = extractAny(card).videoId;
   const decision = backendDecision({ result, veiled, revealed, videoId: currentVideoId });
 
@@ -390,24 +472,25 @@ function backendUnveil(card, titleEl) {
   const el = titleEl || findTitleEl(card);
   stripVeil(card, el, true);
   processed.add(card);
-  card.setAttribute('data-spoilguard', 'clean');
-  card.dataset.spoilguardSig = (findTitleEl(card)?.textContent || '').trim();
-  delete card.dataset.spoilguardAge;
-  delete card.dataset.spoilguardBackend;
+  setCardState(card, {
+    status: 'clean',
+    sig: (findTitleEl(card)?.textContent || '').trim(),
+    age: undefined,
+    backend: false,
+  });
 }
 
 // Vraie carte spoiler → on remplace le titre générique par le safeTitle du backend en
-// réutilisant exactement la mécanique du refresh d'âge (spoilguardSafe / aria / sig).
-// dataset.spoilguardOriginal (vrai titre) et le listener dblclick restent intacts : la
-// révélation continue de fonctionner.
+// réutilisant exactement la mécanique du refresh d'âge (state.safeTitle / aria / state.sig).
+// state.original (vrai titre) et le listener dblclick restent intacts : la révélation
+// continue de fonctionner.
 function backendRetitle(card, titleEl, safeTitle) {
   const el = titleEl || findTitleEl(card);
-  if (!el || el.dataset.spoilguardSafe == null) return; // plus notre voile
-  el.dataset.spoilguardSafe = safeTitle;
+  const st = getCardState(card) || {};
+  if (!el || st.safeTitle == null) return; // plus notre voile
   el.setAttribute('aria-label', safeTitle);
   el.textContent = safeTitle;
-  card.dataset.spoilguardSig = safeTitle;
-  card.dataset.spoilguardBackend = '1';
+  setCardState(card, { safeTitle, sig: safeTitle, backend: true });
 }
 
 // --- Fuites HORS carte (overlays / éléments globaux) ------------------------------
@@ -491,7 +574,8 @@ function scan(root) {
 // compétitions ou déclenche/lève une pause depuis les options/le popup.
 function rescanAll() {
   document.querySelectorAll?.('[data-spoilguard]').forEach((card) => {
-    if (card.dataset.spoilguardRevealed === '1') return; // ne pas défaire une révélation
+    // Ne pas défaire une révélation utilisateur.
+    if ((getCardState(card) || {}).status === 'revealed') return;
     fullReset(card);
     processCard(card);
   });

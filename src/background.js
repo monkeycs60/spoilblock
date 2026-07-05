@@ -16,6 +16,8 @@
 //
 // Invariant : aucune erreur non catchée ne doit remonter (console propre).
 
+import { recordBlocked, formatBadge, dayStamp } from './lib/badgeCount.js';
+
 const DEFAULT_BACKEND = 'https://o2nn42t9tx9tzfukiamwlrnl.137.74.43.81.sslip.io'; // prod VPS (dev : chrome.storage.local.backendUrl = http://localhost:8787)
 const DEFAULT_COMPETITIONS = ['tdf-2026'];
 const DEBOUNCE_MS = 200;
@@ -229,9 +231,91 @@ async function handleClassify(rawVideos) {
   return promise;
 }
 
+// --- Compteur de spoilers bloqués + badge de l'action -----------------------------
+// Le content script envoie { type:'blocked', videoId } la première fois qu'une carte
+// passe réellement en voilé pour ce videoId. Ici on maintient le compteur journalier
+// (clés dailyBlockedCount / dailyBlockedDate lues par popup.js), on déduplique par
+// videoId sur la journée (dailyBlockedIds, borné) et on met à jour le badge.
+// BADGE_COLOR : vert SpoilGuard.
+const BADGE_COLOR = '#12a150';
+const BLOCK_KEYS = ['dailyBlockedCount', 'dailyBlockedDate', 'dailyBlockedIds'];
+
+// Sérialise les mises à jour : plusieurs cartes se voilent quasi simultanément et
+// chaque blocage est un read-modify-write de storage → sans chaîne on perdrait des
+// incréments (races). On enchaîne donc les traitements les uns après les autres.
+let badgeChain = Promise.resolve();
+
+async function setBadge(count) {
+  try {
+    await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR });
+    await chrome.action.setBadgeText({ text: formatBadge(count) });
+  } catch {
+    /* action indisponible (SW en cours d'arrêt…) → silencieux */
+  }
+}
+
+async function applyBlocked(videoId) {
+  const today = dayStamp();
+  let snap;
+  try {
+    snap = await chrome.storage.local.get(BLOCK_KEYS);
+  } catch {
+    return;
+  }
+  const prev = {
+    date: snap.dailyBlockedDate,
+    count: snap.dailyBlockedCount,
+    ids: snap.dailyBlockedIds,
+  };
+  const next = recordBlocked(prev, videoId, today);
+
+  const dateChanged = next.date !== prev.date;
+  const countChanged = next.count !== (Number.isFinite(prev.count) ? prev.count : 0);
+  // Rien n'a bougé (doublon du jour) → pas d'écriture inutile (évite de réveiller le
+  // popup via storage.onChanged pour un no-op). Le badge reflète déjà ce compte.
+  if (!next.added && !dateChanged && !countChanged) return;
+
+  try {
+    await chrome.storage.local.set({
+      dailyBlockedCount: next.count,
+      dailyBlockedDate: next.date,
+      dailyBlockedIds: next.ids,
+    });
+  } catch {
+    /* écriture impossible → on met tout de même le badge à jour en mémoire */
+  }
+  await setBadge(next.count);
+}
+
+function onBlocked(videoId) {
+  badgeChain = badgeChain.then(() => applyBlocked(videoId)).catch(() => {});
+}
+
+// Au (re)démarrage du SW : restaure le badge depuis le storage. Compteur périmé
+// (date ≠ aujourd'hui) → badge vide, le prochain blocage réinitialisera proprement.
+async function restoreBadge() {
+  try {
+    const { dailyBlockedCount, dailyBlockedDate } =
+      await chrome.storage.local.get(['dailyBlockedCount', 'dailyBlockedDate']);
+    const count =
+      dailyBlockedDate === dayStamp() && Number.isFinite(dailyBlockedCount)
+        ? dailyBlockedCount
+        : 0;
+    await setBadge(count);
+  } catch {
+    /* storage indisponible → pas de badge, dégradation silencieuse */
+  }
+}
+restoreBadge();
+
 // Réponse asynchrone : on retourne `true` pour garder le canal ouvert jusqu'à
 // sendResponse. Toute erreur est catchée → réponse `unavailable` (jamais d'exception).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Compteur de blocage : fire-and-forget (aucune réponse attendue).
+  if (msg && msg.type === 'blocked') {
+    onBlocked(msg.videoId);
+    return false;
+  }
   if (!msg || msg.type !== 'classify') return false;
   const videos = Array.isArray(msg.videos) ? msg.videos : [];
   handleClassify(videos)
