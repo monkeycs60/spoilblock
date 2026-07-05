@@ -19,6 +19,7 @@ export function createApp(deps: AppDeps) {
 
   // CORS permissif : reflète l'origine (chrome-extension://…, http://localhost,
   // web app companion) et autorise les requêtes sans origine (curl, RSS).
+  // Reflection d'origine OK car aucune credential/cookie — à revoir si de l'auth arrive.
   app.use(
     '*',
     cors({

@@ -128,4 +128,44 @@ describe('POST /classify — rate limit', () => {
     expect((await post(app, body)).status).toBe(200);
     expect((await post(app, body)).status).toBe(429);
   });
+
+  it('clé = DERNIÈRE entrée du X-Forwarded-For (anti-spoof)', async () => {
+    // Traefik (proxy de confiance) APPEND la vraie IP en fin de liste. Un client
+    // qui forge un 1er élément différent partage quand même le quota s'il a la
+    // même dernière IP.
+    const app = createApp({
+      classify: async (_c, videos) =>
+        videos.map((v) => ({ videoId: v.videoId, spoiler: false, safeTitle: null })),
+      rateLimiter: createRateLimiter({ limit: 1, windowMs: 60_000 }),
+    });
+    const body = { competitions: ['tdf-2026'], videos: [{ videoId: 'v1', title: 't' }] };
+
+    const send = (xff: string) =>
+      app.request('/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff },
+        body: JSON.stringify(body),
+      });
+
+    // Premiers éléments différents, même dernière IP réelle → quota partagé.
+    expect((await send('1.1.1.1, 203.0.113.9')).status).toBe(200);
+    expect((await send('2.2.2.2, 203.0.113.9')).status).toBe(429);
+  });
+});
+
+describe('POST /classify — clamp safeTitle', () => {
+  it('tronque un safeTitle géant renvoyé par le LLM à 300 caractères', async () => {
+    const huge = 'A'.repeat(10_000);
+    const classify: ClassifyFn = async (_c, videos) =>
+      videos.map((v) => ({ videoId: v.videoId, spoiler: true, safeTitle: huge }));
+    const app = createApp({ classify });
+
+    const res = await post(app, {
+      competitions: ['tdf-2026'],
+      videos: [{ videoId: 'v1', title: 'Étape 3' }],
+    });
+    const body = (await res.json()) as any;
+    expect(body.results[0].spoiler).toBe(true);
+    expect(body.results[0].safeTitle.length).toBeLessThanOrEqual(300);
+  });
 });

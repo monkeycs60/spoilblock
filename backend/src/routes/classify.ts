@@ -42,9 +42,15 @@ function genericSafeTitle(competitionIds: string[]): string {
 
 function clientIp(header: string | undefined, fallback: string): string {
   if (!header) return fallback;
-  // x-forwarded-for peut contenir une liste "client, proxy1, proxy2".
-  return header.split(',')[0].trim() || fallback;
+  // On est derrière UN proxy de confiance (Traefik) qui APPEND l'IP réelle en
+  // fin de liste "clientSpoofable, ..., realIP". La 1re entrée est contrôlée par
+  // le client (donc spoofable) : on prend la DERNIÈRE entrée.
+  const parts = header.split(',');
+  return parts[parts.length - 1].trim() || fallback;
 }
+
+/** Longueur max d'un safeTitle renvoyé au client (garde-fou anti-flooding LLM). */
+const SAFE_TITLE_MAX = 300;
 
 export function createClassifyRoute(deps: ClassifyRouteDeps) {
   const cache = deps.cache ?? new TTLCache<Classification>();
@@ -99,9 +105,12 @@ export function createClassifyRoute(deps: ClassifyRouteDeps) {
     // Assemblage dans l'ordre de la requête + post-traitement safeTitle.
     const results = videos.map((v) => {
       const r = hits.get(v.videoId) ?? { videoId: v.videoId, spoiler: true, safeTitle: null };
-      const safeTitle = r.spoiler
+      const raw = r.spoiler
         ? r.safeTitle ?? genericSafeTitle(competitions)
         : null;
+      // Clamp serveur : même si le LLM (ou un schéma tolérant) laisse passer un
+      // titre géant, on ne renvoie jamais plus de SAFE_TITLE_MAX caractères.
+      const safeTitle = raw === null ? null : raw.slice(0, SAFE_TITLE_MAX);
       return { videoId: v.videoId, spoiler: r.spoiler, safeTitle };
     });
 
