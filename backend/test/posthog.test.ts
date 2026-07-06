@@ -137,23 +137,4 @@ describe('routes — events produit sans fuite de titre', () => {
     // PRIVACY : le titre complet ne doit apparaître dans AUCUN event.
     expect(JSON.stringify(client.capture.mock.calls)).not.toContain(secretTitle);
   });
-
-  it('/feed émet classify_batch(source:feed) + feed_served', async () => {
-    const client = fakeClient();
-    setPostHogClient(client as never);
-    const app = createApp({
-      classify: async (_c, vids) => vids.map((v) => ({ videoId: v.videoId, spoiler: /pogacar/i.test(v.videoId) ? true : false, safeTitle: null })),
-      fetchChannelFeed: async () => [
-        { videoId: 'v-a', title: 'Présentation parcours', publishedAt: '2026-07-05T10:00:00Z', channel: 'Eurosport France' },
-      ],
-    });
-    const res = await app.request('/feed/tdf-2026');
-    expect(res.status).toBe(200);
-
-    const events = client.capture.mock.calls.map((c) => c[0].event);
-    expect(events).toContain('classify_batch');
-    expect(events).toContain('feed_served');
-    const feedServed = client.capture.mock.calls.find((c) => c[0].event === 'feed_served');
-    expect(feedServed![0].properties).toMatchObject({ product: 'spoilblock', competitionId: 'tdf-2026' });
-  });
 });

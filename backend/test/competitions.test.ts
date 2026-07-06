@@ -21,20 +21,7 @@ describe('GET /competitions', () => {
     expect(tdf.lexicon).toContain('maillot jaune');
   });
 
-  it('expose feedAvailable (au moins une chaîne mappée) pour chaque compétition', async () => {
-    const res = await app.request('/competitions');
-    const body = await res.json() as any;
-    for (const c of body.competitions) {
-      expect(typeof c.feedAvailable).toBe('boolean');
-    }
-    // tdf/wimbledon/f1 ont toutes des chaînes mappées → feed disponible.
-    const byId = Object.fromEntries(body.competitions.map((c: any) => [c.id, c]));
-    expect(byId['tdf-2026'].feedAvailable).toBe(true);
-    expect(byId['wimbledon-2026'].feedAvailable).toBe(true);
-    expect(byId['f1-2026'].feedAvailable).toBe(true);
-  });
-
-  it('expose les nouveaux packs worldcup-2026 (actif) et vuelta-2026 (inactif), feed disponible', async () => {
+  it('expose les nouveaux packs worldcup-2026 (actif) et vuelta-2026 (inactif)', async () => {
     const res = await app.request('/competitions');
     const body = await res.json() as any;
     // 5 compétitions au catalogue (tdf, wimbledon, f1, worldcup, vuelta).
@@ -46,7 +33,6 @@ describe('GET /competitions', () => {
       emoji: '⚽',
       active: true,
       maxAgeHours: 72,
-      feedAvailable: true, // fifa / espn fc / beIN / eurosport france… mappées
     });
     expect(byId['worldcup-2026'].channels).toContain('fifa');
     expect(byId['worldcup-2026'].lexicon).toContain('coupe du monde');
@@ -56,7 +42,6 @@ describe('GET /competitions', () => {
       emoji: '🚴',
       active: false, // hors saison (août-septembre 2026) — s'activera via les options
       maxAgeHours: 72,
-      feedAvailable: true, // la vuelta + chaînes cyclisme mappées
     });
     expect(byId['vuelta-2026'].channels).toContain('la vuelta');
     expect(byId['vuelta-2026'].lexicon).toContain('maillot rojo');

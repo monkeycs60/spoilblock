@@ -9,7 +9,6 @@ import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createClassifyRoute, type ClassifyRouteDeps } from './routes/classify';
 import { createCompetitionsRoute } from './routes/competitions';
-import { createFeedRoute, type FeedRouteDeps } from './routes/feed';
 import { TTLCache } from './lib/cache';
 import { createRateLimiter } from './lib/rateLimit';
 import type { Classification, ClassifyFn } from './lib/classifier';
@@ -19,11 +18,6 @@ export type AppDeps = {
   cache?: ClassifyRouteDeps['cache'];
   rateLimiter?: ClassifyRouteDeps['rateLimiter'];
   rateLimit?: ClassifyRouteDeps['rateLimit'];
-  /** RSS injectable (mock en test) — sinon client RSS réel. */
-  fetchChannelFeed?: FeedRouteDeps['fetchChannelFeed'];
-  feedCache?: FeedRouteDeps['feedCache'];
-  /** Horloge injectable (fenêtre de fraîcheur du feed) — pinnable en test. */
-  now?: FeedRouteDeps['now'];
   /** Index publishedAt (RSS) injecté dans /classify (best-effort, optionnel). */
   publishedIndex?: ClassifyRouteDeps['publishedIndex'];
 };
@@ -63,8 +57,7 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true, uptime: process.uptime() }));
 
-  // Cache de classification + rate limiter PARTAGÉS entre /classify et /feed :
-  // une vidéo classée par un flux profite au batch de l'extension, et vice versa.
+  // Cache de classification + rate limiter de /classify.
   const classifyCache = deps.cache ?? new TTLCache<Classification>();
   const rateLimiter =
     deps.rateLimiter ?? createRateLimiter(deps.rateLimit ?? { limit: 60, windowMs: 60_000 });
@@ -79,20 +72,8 @@ export function createApp(deps: AppDeps) {
     })
   );
   app.route('/competitions', createCompetitionsRoute());
-  app.route(
-    '/feed',
-    createFeedRoute({
-      classify: deps.classify,
-      cache: classifyCache,
-      rateLimiter,
-      fetchChannelFeed: deps.fetchChannelFeed,
-      feedCache: deps.feedCache,
-      now: deps.now,
-    })
-  );
 
-  // Routage public (spoilblock.com) : la LANDING marketing vit à la RACINE `/`
-  // (vitrine d'abord), la companion « feed sans spoiler » vit sur `/app`.
+  // Routage public (spoilblock.com) : la LANDING marketing vit à la RACINE `/`.
   // `/landing` est conservé en redirection permanente (anciens liens).
   //
   // Landing : deux emplacements possibles —
@@ -130,15 +111,17 @@ export function createApp(deps: AppDeps) {
   app.get('/', serveLanding);
   app.get('/landing', (c) => c.redirect('/', 301));
 
-  // Companion web app : servie sur /app depuis backend/public/.
-  // serveStatic (@hono/node-server) résout `root` relativement au cwd ; on calcule
-  // le chemin ABSOLU de public/ depuis ce fichier source puis on le convertit en
-  // RELATIF au cwd réel — GET /app sert le HTML quel que soit le dossier de lancement.
+  // Ancienne companion web app (retirée) : `/app` (et ses sous-chemins) redirige
+  // désormais en permanence vers la racine — plus sympa que 404 pour les vieux favoris.
+  app.get('/app', (c) => c.redirect('/', 301));
+  app.get('/app/*', (c) => c.redirect('/', 301));
+
+  // Assets statiques (ex. landing/) servis depuis backend/public/.
+  // serveStatic (@hono/node-server) résout `root` relativement au cwd ; on calcule le
+  // chemin ABSOLU de public/ depuis ce fichier source puis on le convertit en RELATIF
+  // au cwd réel — les assets sont servis quel que soit le dossier de lancement.
   const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
   const publicRoot = path.relative(process.cwd(), publicDir) || '.';
-  app.get('/app', serveStatic({ path: `${publicRoot}/index.html` }));
-  app.use('/app/*', serveStatic({ root: publicRoot, rewriteRequestPath: (p) => p.replace(/^\/app/, '') }));
-  // Autres assets statiques éventuels (hors /app) restent servis depuis public/.
   app.use('/*', serveStatic({ root: publicRoot }));
 
   return app;
