@@ -22,6 +22,8 @@ export type AppDeps = {
   /** RSS injectable (mock en test) — sinon client RSS réel. */
   fetchChannelFeed?: FeedRouteDeps['fetchChannelFeed'];
   feedCache?: FeedRouteDeps['feedCache'];
+  /** Horloge injectable (fenêtre de fraîcheur du feed) — pinnable en test. */
+  now?: FeedRouteDeps['now'];
   /** Index publishedAt (RSS) injecté dans /classify (best-effort, optionnel). */
   publishedIndex?: ClassifyRouteDeps['publishedIndex'];
 };
@@ -85,6 +87,7 @@ export function createApp(deps: AppDeps) {
       rateLimiter,
       fetchChannelFeed: deps.fetchChannelFeed,
       feedCache: deps.feedCache,
+      now: deps.now,
     })
   );
 

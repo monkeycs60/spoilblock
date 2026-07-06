@@ -33,6 +33,34 @@ describe('GET /competitions', () => {
     expect(byId['wimbledon-2026'].feedAvailable).toBe(true);
     expect(byId['f1-2026'].feedAvailable).toBe(true);
   });
+
+  it('expose les nouveaux packs worldcup-2026 (actif) et vuelta-2026 (inactif), feed disponible', async () => {
+    const res = await app.request('/competitions');
+    const body = await res.json() as any;
+    // 5 compétitions au catalogue (tdf, wimbledon, f1, worldcup, vuelta).
+    expect(body.competitions).toHaveLength(5);
+    const byId = Object.fromEntries(body.competitions.map((c: any) => [c.id, c]));
+
+    expect(byId['worldcup-2026']).toMatchObject({
+      label: 'Coupe du monde',
+      emoji: '⚽',
+      active: true,
+      maxAgeHours: 72,
+      feedAvailable: true, // fifa / espn fc / beIN / eurosport france… mappées
+    });
+    expect(byId['worldcup-2026'].channels).toContain('fifa');
+    expect(byId['worldcup-2026'].lexicon).toContain('coupe du monde');
+
+    expect(byId['vuelta-2026']).toMatchObject({
+      label: 'La Vuelta',
+      emoji: '🚴',
+      active: false, // hors saison (août-septembre 2026) — s'activera via les options
+      maxAgeHours: 72,
+      feedAvailable: true, // la vuelta + chaînes cyclisme mappées
+    });
+    expect(byId['vuelta-2026'].channels).toContain('la vuelta');
+    expect(byId['vuelta-2026'].lexicon).toContain('maillot rojo');
+  });
 });
 
 describe('GET /health', () => {

@@ -102,11 +102,65 @@ export const F1_2026 = {
   ],
 };
 
+export const WORLDCUP_2026 = {
+  id: 'worldcup-2026',
+  label: 'Coupe du monde',
+  emoji: '⚽',
+  maxAgeHours: 72,
+  channels: [
+    'fifa',
+    'espn fc',
+    'bein sports france',
+    'eurosport france',
+    'eurosport',
+    'france tv sport',
+    'france.tv slash sport',
+    // TF1 volontairement écartée : chaîne généraliste grand public (voir backend).
+    'tf1',
+    'espn',
+  ],
+  lexicon: [
+    'coupe du monde', 'world cup', 'mondial', 'fifa', 'fifa world cup',
+    'huitième de finale', 'huitieme de finale', 'quart de finale', 'quarts de finale',
+    'demi-finale', 'demi finale', 'penalty', 'tirs au but', 'mbappé', 'mbappe',
+    'résumé du match', 'resume du match', 'match highlights', 'group stage',
+    'knockout', 'round of 16',
+    // Vocabulaire multilingue (en/es) ; mots génériques nus (« but », « goal », « match »)
+    // volontairement écartés (faux positifs massifs) :
+    'copa del mundo', 'quarterfinal', 'quarter-final', 'semifinal', 'semi-final',
+    'ronaldo', 'messi',
+  ],
+};
+
+export const VUELTA_2026 = {
+  id: 'vuelta-2026',
+  label: 'La Vuelta',
+  emoji: '🚴',
+  maxAgeHours: 72,
+  channels: [
+    'la vuelta',
+    'eurosport france',
+    'eurosport',
+    'cycling pro net',
+    'lanterne rouge',
+    'velon cc',
+    'flobikes',
+    'gcn racing',
+  ],
+  lexicon: [
+    'vuelta', 'la vuelta', 'vuelta a españa', 'vuelta a espana', 'maillot rojo',
+    'maillot rouge', 'roglic', 'roglič',
+    'etapa', 'españa', 'espana',
+  ],
+};
+
 // Catalogue local indexé par id. Doit rester aligné avec le backend.
 export const PACKS = {
   'tdf-2026': TDF_2026,
   'wimbledon-2026': WIMBLEDON_2026,
   'f1-2026': F1_2026,
+  'worldcup-2026': WORLDCUP_2026,
+  'vuelta-2026': VUELTA_2026,
 };
 
 // Fusionne les packs des compétitions actives en un pack unique exploitable par

@@ -14,7 +14,13 @@ import { Hono } from 'hono';
 import { TTLCache, classificationKey } from '../lib/cache';
 import { createRateLimiter, type RateLimiter } from '../lib/rateLimit';
 import { getCompetition, type Competition } from '../data/competitions';
-import { createRssClient, resolveChannelId, type RssEntry } from '../lib/rss';
+import {
+  createRssClient,
+  resolveChannelId,
+  isGeneralistChannel,
+  titleMatchesLexicon,
+  type RssEntry,
+} from '../lib/rss';
 import { captureServerEvent, BACKEND_DISTINCT_ID } from '../lib/posthog';
 import type { Classification, ClassifyFn, Video } from '../lib/classifier';
 
@@ -52,6 +58,8 @@ export type FeedRouteDeps = {
   fetchChannelFeed?: (channelId: string) => Promise<RssEntry[]>;
   /** Cache de la réponse assemblée (par competitionId, TTL 10 min). */
   feedCache?: TTLCache<CachedFeed>;
+  /** Horloge injectable (ms epoch) pour la fenêtre de fraîcheur — pinnable en test. */
+  now?: () => number;
 };
 
 /** Nombre max de vidéos renvoyées (aligné sur la limite de batch classify). */
@@ -77,6 +85,18 @@ function toMillis(iso: string): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+/**
+ * true si la vidéo date de ≤ maxAgeHours par rapport à `nowMs`. Une date absente ou
+ * illisible est considérée NON fraîche (exclue) : le feed companion doit montrer « le
+ * résumé de la DERNIÈRE étape/course », pas les archives — mieux vaut rien qu'une
+ * vidéo dont on ne peut pas garantir la fraîcheur.
+ */
+function isFresh(publishedAt: string, maxAgeHours: number, nowMs: number): boolean {
+  const t = Date.parse(publishedAt);
+  if (Number.isNaN(t)) return false;
+  return nowMs - t <= maxAgeHours * 60 * 60 * 1000;
+}
+
 export function createFeedRoute(deps: FeedRouteDeps) {
   const cache = deps.cache ?? new TTLCache<Classification>();
   const rateLimiter =
@@ -84,6 +104,7 @@ export function createFeedRoute(deps: FeedRouteDeps) {
   const feedCache = deps.feedCache ?? new TTLCache<CachedFeed>({ ttlMs: FEED_TTL_MS });
   const fetchChannelFeed =
     deps.fetchChannelFeed ?? createRssClient().fetchChannelFeed;
+  const now = deps.now ?? Date.now;
 
   const app = new Hono();
 
@@ -112,25 +133,41 @@ export function createFeedRoute(deps: FeedRouteDeps) {
     }
 
     // 1. Résolution des chaînes → channelIds (dédupliqués, ignore les inconnues).
-    const channelIds = [
-      ...new Set(
-        comp.channels
-          .map((name) => resolveChannelId(name))
-          .filter((id): id is string => id !== undefined)
-      ),
-    ];
+    //    On garde par channelId son caractère « généraliste » (une chaîne mono-
+    //    thématique ET généraliste étant impossible, OR suffit si plusieurs noms
+    //    pointent le même id).
+    const generalistById = new Map<string, boolean>();
+    for (const name of comp.channels) {
+      const id = resolveChannelId(name);
+      if (id === undefined) continue;
+      generalistById.set(id, (generalistById.get(id) ?? false) || isGeneralistChannel(name));
+    }
 
-    // 2. Récupération parallèle des flux RSS (un échec n'interrompt rien).
-    const feeds = await Promise.all(channelIds.map((id) => fetchChannelFeed(id)));
+    // 2. Récupération parallèle des flux RSS (un échec n'interrompt rien). Pour une
+    //    chaîne GÉNÉRALISTE (multi-sports), on ne garde de son flux que les vidéos
+    //    dont le titre matche le lexique du pack demandé — sinon un feed « Tour de
+    //    France » remonterait le foot d'Eurosport. Les chaînes spécialisées passent
+    //    sans filtre (tout leur flux concerne déjà la compétition).
+    const feeds = await Promise.all(
+      [...generalistById].map(async ([id, generalist]) => {
+        const channelEntries = await fetchChannelFeed(id);
+        return generalist
+          ? channelEntries.filter((e) => titleMatchesLexicon(e.title, comp.lexicon))
+          : channelEntries;
+      })
+    );
     const entries = feeds.flat();
 
-    // 3. Dédup par videoId (une même vidéo peut apparaître sur 2 flux), tri par
-    //    date décroissante, puis 30 max.
+    // 3. Dédup par videoId (une même vidéo peut apparaître sur 2 flux), fenêtre de
+    //    FRAÎCHEUR (≤ maxAgeHours : « le résumé de la DERNIÈRE étape », pas les
+    //    archives), tri par date décroissante, puis 30 max.
+    const nowMs = now();
     const byVideo = new Map<string, RssEntry>();
     for (const e of entries) {
       if (!byVideo.has(e.videoId)) byVideo.set(e.videoId, e);
     }
     const sorted = [...byVideo.values()]
+      .filter((e) => isFresh(e.publishedAt, comp.maxAgeHours, nowMs))
       .sort((a, b) => toMillis(b.publishedAt) - toMillis(a.publishedAt))
       .slice(0, MAX_VIDEOS);
 

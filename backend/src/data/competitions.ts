@@ -125,8 +125,86 @@ export const F1_2026: Competition = {
   ],
 };
 
+export const WORLDCUP_2026: Competition = {
+  id: 'worldcup-2026',
+  label: 'Coupe du monde',
+  emoji: '⚽',
+  // EN COURS : édition USA / Mexique / Canada, juin → juillet 2026.
+  active: true,
+  maxAgeHours: 72,
+  // Recopié dans src/lib/pack.js (fallback offline de l'extension) — même contenu.
+  channels: [
+    // Mono-foot → aussi dans CHANNEL_ID_MAP (leur flux RSS ne parle QUE de foot,
+    // il peut alimenter le feed companion sans le polluer) :
+    'fifa',        // @FIFA (contenu Coupe du monde)
+    'espn fc',     // @ESPNFC (foot US, couverture Coupe du monde)
+    // Multi-sports → mappées MAIS marquées generalist (CHANNEL_ID_MAP) : dans le feed,
+    // seules leurs vidéos matchant le lexique ci-dessous sont gardées.
+    'bein sports france',
+    'eurosport france',
+    'eurosport',
+    'france tv sport',
+    'france.tv slash sport',
+    // TF1 volontairement ÉCARTÉE : @TF1 est une chaîne généraliste grand public
+    // (divertissement, séries, news — son flux RSS remonte « Star Academy »…), PAS
+    // sport-only → sur-voilerait côté extension et le foot y est déjà couvert par
+    // FIFA / beIN / france tv. Non mappée dans CHANNEL_ID_MAP non plus.
+    'tf1',
+    // Généraliste sport (US, diffuseur Coupe du monde) → pré-filtre extension seulement (hors feed) :
+    'espn',
+  ],
+  lexicon: [
+    'coupe du monde', 'world cup', 'mondial', 'fifa', 'fifa world cup',
+    'huitième de finale', 'huitieme de finale', 'quart de finale', 'quarts de finale',
+    'demi-finale', 'demi finale', 'penalty', 'tirs au but', 'mbappé', 'mbappe',
+    'résumé du match', 'resume du match', 'match highlights', 'group stage',
+    'knockout', 'round of 16',
+    // Vocabulaire multilingue (en/es). Termes SPÉCIFIQUES au tournoi ou noms propres ;
+    // on ÉVITE les mots trop génériques nus (« but », « goal », « match » seuls →
+    // faux positifs massifs : un « match » quelconque, un « goal » de tout sport) :
+    'copa del mundo', 'quarterfinal', 'quarter-final', 'semifinal', 'semi-final',
+    'ronaldo', 'messi',
+  ],
+};
+
+export const VUELTA_2026: Competition = {
+  id: 'vuelta-2026',
+  label: 'La Vuelta',
+  emoji: '🚴',
+  // Période : août → septembre 2026 (hors saison au 2026-07). Inactive pour l'instant ;
+  // elle s'activera via les options (côté extension) / bascule active:true le moment venu.
+  active: false,
+  maxAgeHours: 72,
+  // Recopié dans src/lib/pack.js (fallback offline de l'extension) — même contenu.
+  channels: [
+    // Chaîne officielle mono-cyclisme (flux RSS vide hors saison, id valide) → CHANNEL_ID_MAP :
+    'la vuelta',
+    // Chaînes cyclisme déjà mappées, réutilisées :
+    'eurosport france',
+    'eurosport',
+    'cycling pro net',
+    'lanterne rouge',
+    'velon cc',
+    'flobikes',
+    'gcn racing',
+  ],
+  lexicon: [
+    'vuelta', 'la vuelta', 'vuelta a españa', 'vuelta a espana', 'maillot rojo',
+    'maillot rouge', 'roglic', 'roglič',
+    // « etapa » (es) déjà partagé avec le TDF (multi-tours) ; « españa »/« espana »
+    // gardés (contexte cyclisme espagnol) :
+    'etapa', 'españa', 'espana',
+  ],
+};
+
 /** Catalogue complet (actives + inactives). */
-export const COMPETITIONS: Competition[] = [TDF_2026, WIMBLEDON_2026, F1_2026];
+export const COMPETITIONS: Competition[] = [
+  TDF_2026,
+  WIMBLEDON_2026,
+  F1_2026,
+  WORLDCUP_2026,
+  VUELTA_2026,
+];
 
 const BY_ID = new Map(COMPETITIONS.map((c) => [c.id, c]));
 

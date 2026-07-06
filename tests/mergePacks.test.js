@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { PACKS, mergePacks, TDF_2026 } from '../src/lib/pack.js';
 
 describe('PACKS', () => {
-  it('expose les trois compétitions', () => {
+  it('expose les cinq compétitions', () => {
     expect(Object.keys(PACKS).sort()).toEqual(
-      ['f1-2026', 'tdf-2026', 'wimbledon-2026'],
+      ['f1-2026', 'tdf-2026', 'vuelta-2026', 'wimbledon-2026', 'worldcup-2026'],
     );
   });
   it('tdf-2026 pointe sur TDF_2026 (compat)', () =>

@@ -28,46 +28,73 @@ export type RssEntry = {
 /** Implémentation de fetch injectable (pour tests). */
 export type FetchImpl = (url: string) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
 
+/** Entrée de la table de correspondance chaîne → flux RSS. */
+export type ChannelEntry = {
+  /** channelId YouTube (UC…), validé via feeds/videos.xml. */
+  id: string;
+  /**
+   * true = chaîne MULTI-SPORTS / multi-sujets (Eurosport, beIN, L'Équipe, france tv…).
+   * Son flux RSS mélange les disciplines : dans le feed companion, on ne garde donc
+   * QUE ses vidéos dont le titre matche le lexique du pack demandé (voir feed.ts),
+   * sinon un feed « Tour de France » se met à remonter du foot. Le flag est global à
+   * la chaîne ; la pertinence se juge toujours par rapport au pack effectivement demandé.
+   * Les chaînes mono-thématiques (Velon, Tennis TV, FIFA, La Vuelta…) n'ont pas ce flag
+   * et passent sans filtre.
+   */
+  generalist?: boolean;
+};
+
 /**
- * Table statique NOM DE CHAÎNE (normalisé, minuscules) → channelId YouTube.
+ * Table statique NOM DE CHAÎNE (normalisé, minuscules) → { channelId, generalist? }.
  *
- * Chaque channelId a été vérifié le 2026-07-05 en récupérant
+ * Chaque channelId a été vérifié en récupérant
  * https://www.youtube.com/feeds/videos.xml?channel_id=UC... et en confrontant
  * le <name> du flux au nom attendu. Les clés correspondent aux noms présents
  * dans `channels` des packs (src/data/competitions.ts).
  *
- * Note : les chaînes officielles saisonnières (Tour de France, La chaîne l'Équipe)
- * peuvent avoir un flux temporairement vide hors compétition — l'id reste valide.
+ * Note : les chaînes officielles saisonnières (Tour de France, La Vuelta, La chaîne
+ * l'Équipe) peuvent avoir un flux temporairement vide hors compétition — l'id reste valide.
  */
-export const CHANNEL_ID_MAP: Record<string, string> = {
-  'tour de france': 'UCZF_0TqrblIsnmArWyWIg0A', // auteur RSS: « tourdefrance »
-  'eurosport france': 'UCozt5iXNqmhU1I7tcjJ0UFQ', // auteur RSS: « Eurosport France »
-  'france tv sport': 'UCh4o9ioiqbUveUrCLP8Wv6A', // auteur RSS: « france tv »
-  'france.tv slash sport': 'UCh4o9ioiqbUveUrCLP8Wv6A',
-  "la chaine l'équipe": 'UC6vcN22Apu8HakHBVa28sWw', // auteur RSS: « La chaîne l'équipe »
-  "l'équipe": 'UC6vcN22Apu8HakHBVa28sWw',
-  'cycling pro net': 'UCAKkRVGHv4uHTM5S2jSzLDQ', // auteur RSS: « Cycling Pro Net »
-  'lanterne rouge': 'UC77UtoyivVHkpApL0wGfH5w', // auteur RSS: « Lanterne Rouge »
-  'velon cc': 'UCcbBlBEtCZ2lX7bodgi02Xg', // auteur RSS: « Velon »
+export const CHANNEL_ID_MAP: Record<string, ChannelEntry> = {
+  'tour de france': { id: 'UCZF_0TqrblIsnmArWyWIg0A' }, // auteur RSS: « tourdefrance » (mono-cyclisme)
+  'eurosport france': { id: 'UCozt5iXNqmhU1I7tcjJ0UFQ', generalist: true }, // « Eurosport France » (multi-sports)
+  'france tv sport': { id: 'UCh4o9ioiqbUveUrCLP8Wv6A', generalist: true }, // auteur RSS: « france tv » (multi-sports)
+  'france.tv slash sport': { id: 'UCh4o9ioiqbUveUrCLP8Wv6A', generalist: true },
+  "la chaine l'équipe": { id: 'UC6vcN22Apu8HakHBVa28sWw', generalist: true }, // « La chaîne l'équipe » (multi-sports)
+  "l'équipe": { id: 'UC6vcN22Apu8HakHBVa28sWw', generalist: true },
+  'cycling pro net': { id: 'UCAKkRVGHv4uHTM5S2jSzLDQ' }, // « Cycling Pro Net » (mono-cyclisme)
+  'lanterne rouge': { id: 'UC77UtoyivVHkpApL0wGfH5w' }, // « Lanterne Rouge » (mono-cyclisme)
+  'velon cc': { id: 'UCcbBlBEtCZ2lX7bodgi02Xg' }, // auteur RSS: « Velon » (mono-cyclisme)
   // Ajoutés le 2026-07-05 : channelId extrait de https://www.youtube.com/@handle
   // (User-Agent Googlebot) puis VALIDÉ via feeds/videos.xml?channel_id=… (15 <entry>,
   // <name> conforme). Chaînes Wimbledon/F1.
-  'bein sports france': 'UCfj4kQ6_mYO5r4hzX5KloVw', // @beinsportsfrance → auteur RSS: « beIN SPORTS France »
-  'wimbledon': 'UCNa8NxMgSm7m4Ii9d4QGk1Q',          // @Wimbledon → auteur RSS: « Wimbledon »
-  'formula 1': 'UCB_qr75-ydFVKSF9Dmo6izg',          // @Formula1 → auteur RSS: « FORMULA 1 »
-  'canal+ sport': 'UC8ggH3zU61XO0nMskSQwZdA',       // @CANALPlusSport → auteur RSS: « CANAL+ Sport »
+  'bein sports france': { id: 'UCfj4kQ6_mYO5r4hzX5KloVw', generalist: true }, // @beinsportsfrance → « beIN SPORTS France » (multi-sports)
+  'wimbledon': { id: 'UCNa8NxMgSm7m4Ii9d4QGk1Q' },          // @Wimbledon → « Wimbledon » (mono-tennis)
+  'formula 1': { id: 'UCB_qr75-ydFVKSF9Dmo6izg' },          // @Formula1 → « FORMULA 1 » (mono-F1)
+  'canal+ sport': { id: 'UC8ggH3zU61XO0nMskSQwZdA', generalist: true }, // @CANALPlusSport → « CANAL+ Sport » (multi-sports : F1, foot, rugby…)
   // Chaînes internationales SPÉCIALISÉES ajoutées le 2026-07-06 : channelId extrait de
   // https://www.youtube.com/@handle (UA Googlebot, via "externalId"/canonical) puis VALIDÉ
   // via feeds/videos.xml?channel_id=… (15 <entry>, <name> conforme). Seules les chaînes
   // mono-thématiques figurent ici : leur flux RSS ne parle QUE de la compétition, donc il
   // peut alimenter le feed companion sans le polluer.
-  'flobikes': 'UCljVdpux_uz7NydDWYEeSIA',           // @FloBikes → auteur RSS: « FloBikes » (cyclisme US)
-  'gcn racing': 'UCu7phdCr-raU7OaJfEpHZww',         // @gcnracing → auteur RSS: « GCN Racing » (cyclisme)
-  'tennis tv': 'UCbcxFkd6B9xUU54InHv4Tig',          // @TennisTV → auteur RSS: « Tennis TV »
-  'sky sport tennis': 'UC7bfeZHiUlQO32O32qlMZXg',   // @SkySportTennis → auteur RSS: « Sky Sport Tennis » (IT)
-  'sky sports f1': 'UC3kxJQ9RfaS5CKeYbbFMi4Q',      // @SkySportsF1 → auteur RSS: « Sky Sports F1 » (UK)
+  'flobikes': { id: 'UCljVdpux_uz7NydDWYEeSIA' },           // @FloBikes → « FloBikes » (cyclisme US)
+  'gcn racing': { id: 'UCu7phdCr-raU7OaJfEpHZww' },         // @gcnracing → « GCN Racing » (cyclisme)
+  'tennis tv': { id: 'UCbcxFkd6B9xUU54InHv4Tig' },          // @TennisTV → « Tennis TV »
+  'sky sport tennis': { id: 'UC7bfeZHiUlQO32O32qlMZXg' },   // @SkySportTennis → « Sky Sport Tennis » (IT)
+  'sky sports f1': { id: 'UC3kxJQ9RfaS5CKeYbbFMi4Q' },      // @SkySportsF1 → « Sky Sports F1 » (UK)
+  // Chaînes Coupe du monde / La Vuelta ajoutées le 2026-07-06 (même méthode : @handle via UA
+  // Googlebot → externalId → RSS validé). FIFA et ESPN FC sont MONO-FOOT (tout leur flux parle
+  // de foot / Coupe du monde) → pas de flag generalist. La Vuelta est mono-cyclisme (flux vide
+  // hors saison août-sept, id valide) :
+  'fifa': { id: 'UCpcTrCXblq78GZrTUTLWeBw' },               // @FIFA → « FIFA » (mono-foot, contenu Coupe du monde)
+  'espn fc': { id: 'UC6c1z7bA__85CIWZ_jpCK-Q' },            // @ESPNFC → « ESPN FC » (mono-foot)
+  'la vuelta': { id: 'UCrQIsqw3kkzMAVDtD5DjNRw' },          // @VueltaEspana → « vueltaespana » (mono-cyclisme)
   // Non mappées volontairement : « eurosport » (nu) et « canal+ » (nu) sont des
   // catch-all redondants — les chaînes officielles France ci-dessus couvrent le risque.
+  // TF1 (@TF1, id UC26vXhYofHiZDM2ar1zUuwQ) ÉCARTÉE comme la BBC : chaîne GÉNÉRALISTE
+  // grand public (son flux RSS remonte Star Academy, divertissement, séries…), PAS
+  // sport-only → la mapper polluerait le feed même avec le filtre lexique, et sur-voilerait
+  // côté extension. Le foot de TF1 est de toute façon couvert par FIFA / beIN / france tv.
   // De même, les chaînes GÉNÉRALISTES multi-sports ajoutées aux packs (nbc sports, tnt sports,
   // itv sport, rtbfsport, srf sport, espn) NE sont PAS mappées : leur flux RSS est multi-sports
   // et polluerait le feed companion. Elles servent au seul pré-filtre extension (âge < 72h + LLM).
@@ -75,7 +102,27 @@ export const CHANNEL_ID_MAP: Record<string, string> = {
 
 /** Résout un nom de chaîne (tel qu'en pack) en channelId, ou undefined si inconnu. */
 export function resolveChannelId(channelName: string): string | undefined {
-  return CHANNEL_ID_MAP[channelName.trim().toLowerCase()];
+  return CHANNEL_ID_MAP[channelName.trim().toLowerCase()]?.id;
+}
+
+/**
+ * true si la chaîne est marquée « généraliste » (multi-sports) dans CHANNEL_ID_MAP.
+ * Utilisé par /feed pour n'accepter d'une telle chaîne que les vidéos matchant le
+ * lexique du pack demandé. Chaîne inconnue ou spécialisée → false.
+ */
+export function isGeneralistChannel(channelName: string): boolean {
+  return CHANNEL_ID_MAP[channelName.trim().toLowerCase()]?.generalist === true;
+}
+
+/**
+ * true si `title` contient (insensible à la casse) au moins un mot du `lexicon`.
+ * Transposition TS de matchesLexicon (extension, src/lib/matcher.js) : matching par
+ * simple includes() — le lexique est déjà normalisé en minuscules, on abaisse quand même
+ * le titre ET chaque mot par prudence. Sert au filtre « chaîne généraliste » de /feed.
+ */
+export function titleMatchesLexicon(title: string, lexicon: string[]): boolean {
+  const t = (title ?? '').toLowerCase();
+  return lexicon.some((w) => t.includes(w.toLowerCase()));
 }
 
 /** Déséchappe les entités XML courantes rencontrées dans les titres YouTube. */

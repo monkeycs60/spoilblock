@@ -170,6 +170,7 @@
         footer: "Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.",
         protected: "protégé",
         noVideos: "Aucune vidéo récente pour cette compétition.",
+        emptyFeed: "Rien de récent — reviens après la prochaine étape/course !",
         noCompetitions: "Aucune compétition disponible.",
         feedError: "Impossible de charger le feed ({msg}).",
         backendError: "Backend indisponible ({msg})."
@@ -183,6 +184,7 @@
         footer: "Revealing titles are hidden. Hit play with peace of mind.",
         protected: "protected",
         noVideos: "No recent video for this competition.",
+        emptyFeed: "Nothing recent — check back after the next stage/race!",
         noCompetitions: "No competition available.",
         feedError: "Couldn't load the feed ({msg}).",
         backendError: "Backend unavailable ({msg})."
@@ -290,7 +292,9 @@
     function renderVideos(videos) {
       feedEl.innerHTML = "";
       if (!videos || videos.length === 0) {
-        setStatus(t("noVideos"), false);
+        // Feed vide = rien de frais dans la fenêtre maxAgeHours (le backend ne renvoie
+        // que du contenu ≤ 72 h). Message orienté « reviens après la prochaine course ».
+        setStatus(t("emptyFeed"), false);
         return;
       }
       setStatus("", false);

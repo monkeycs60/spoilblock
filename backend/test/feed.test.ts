@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { createApp } from '../src/app';
 import { TTLCache, classificationKey } from '../src/lib/cache';
 import { createRateLimiter } from '../src/lib/rateLimit';
-import { parseFeed, resolveChannelId, createRssClient, type RssEntry } from '../src/lib/rss';
+import {
+  parseFeed,
+  resolveChannelId,
+  createRssClient,
+  isGeneralistChannel,
+  titleMatchesLexicon,
+  type RssEntry,
+} from '../src/lib/rss';
 import { fallbackResult, type Classification, type ClassifyFn } from '../src/lib/classifier';
 import type { FeedResponse } from '../src/routes/feed';
 
@@ -105,11 +112,16 @@ describe('createRssClient — cache 10 min', () => {
 // GET /feed/:competitionId — route
 // ---------------------------------------------------------------------------
 
-// RSS mocké : 3 entrées, dates volontairement dans le désordre.
+// Horloge pinnée pour la fenêtre de fraîcheur (72 h) : « maintenant » = 2026-07-06 12:00Z.
+const NOW = Date.parse('2026-07-06T12:00:00Z');
+
+// RSS mocké : 3 entrées, dates volontairement dans le désordre, toutes DANS la fenêtre
+// 72 h par rapport à NOW (v-old ≈ 52 h) pour que le tri/dedup soit testé indépendamment
+// du filtre de fraîcheur (testé à part).
 const RSS_ENTRIES: RssEntry[] = [
   { videoId: 'v-mid', title: 'Présentation du parcours étape 6', publishedAt: '2026-07-04T10:00:00Z', channel: 'Eurosport France' },
   { videoId: 'v-new', title: 'Pogacar écrase la montagne, écart énorme', publishedAt: '2026-07-05T20:00:00Z', channel: 'Lanterne Rouge' },
-  { videoId: 'v-old', title: 'Recette de crêpes bretonnes', publishedAt: '2026-07-01T08:00:00Z', channel: 'Eurosport France' },
+  { videoId: 'v-old', title: 'Recette de crêpes bretonnes', publishedAt: '2026-07-04T08:00:00Z', channel: 'Lanterne Rouge' },
 ];
 
 // classify : spoiler si le titre contient "Pogacar" ; réécrit alors le titre.
@@ -127,6 +139,7 @@ function makeApp(overrides: Partial<Parameters<typeof createApp>[0]> = {}) {
   return createApp({
     classify,
     fetchChannelFeed: async () => RSS_ENTRIES,
+    now: () => NOW,
     ...overrides,
   });
 }
@@ -176,7 +189,7 @@ describe('GET /feed/:competitionId', () => {
   it('met la réponse en cache (2e appel sans re-fetch ni re-classify)', async () => {
     const fetchSpy = vi.fn(async () => RSS_ENTRIES);
     const classifySpy = vi.fn(classify);
-    const app = createApp({ classify: classifySpy, fetchChannelFeed: fetchSpy });
+    const app = createApp({ classify: classifySpy, fetchChannelFeed: fetchSpy, now: () => NOW });
 
     const r1 = await app.request('/feed/tdf-2026');
     expect(r1.headers.get('X-Feed-Cache')).toBe('miss');
@@ -192,7 +205,7 @@ describe('GET /feed/:competitionId', () => {
     // Pré-remplit le cache pour tdf-2026 comme si /classify avait déjà vu v-mid (non-spoiler).
     cache.set(classificationKey(['tdf-2026'], 'v-mid'), { videoId: 'v-mid', spoiler: false, safeTitle: null });
     const classifySpy = vi.fn(classify);
-    const app = createApp({ classify: classifySpy, fetchChannelFeed: async () => RSS_ENTRIES, cache });
+    const app = createApp({ classify: classifySpy, fetchChannelFeed: async () => RSS_ENTRIES, cache, now: () => NOW });
 
     const res = await app.request('/feed/tdf-2026');
     const body = (await res.json()) as FeedResponse;
@@ -210,7 +223,7 @@ describe('GET /feed/:competitionId', () => {
     // v-new porte pourtant un titre spoilant ("Pogacar écrase la montagne…").
     cache.set(classificationKey(['tdf-2026'], 'v-new'), { videoId: 'v-new', spoiler: false, safeTitle: null });
     const classifySpy = vi.fn(classify);
-    const app = createApp({ classify: classifySpy, fetchChannelFeed: async () => RSS_ENTRIES, cache });
+    const app = createApp({ classify: classifySpy, fetchChannelFeed: async () => RSS_ENTRIES, cache, now: () => NOW });
 
     // Requête sur une AUTRE compétition : le cache tdf-2026 ne doit PAS servir.
     const res = await app.request('/feed/wimbledon-2026');
@@ -236,7 +249,7 @@ describe('GET /feed/:competitionId', () => {
   it('un repli LLM (fallback) ne pollue pas le cache de classification', async () => {
     const cache = new TTLCache<Classification>();
     const failing: ClassifyFn = async (_ids, videos) => videos.map(fallbackResult);
-    const app = createApp({ classify: failing, fetchChannelFeed: async () => RSS_ENTRIES, cache });
+    const app = createApp({ classify: failing, fetchChannelFeed: async () => RSS_ENTRIES, cache, now: () => NOW });
 
     const res = await app.request('/feed/tdf-2026');
     const body = (await res.json()) as FeedResponse;
@@ -245,5 +258,74 @@ describe('GET /feed/:competitionId', () => {
     expect('originalTitle' in body.videos[0]).toBe(false);
     // Rien n'a été mis en cache (fallback).
     expect(cache.size).toBe(0);
+  });
+
+  it('filtre une chaîne GÉNÉRALISTE par le lexique (foot écarté du feed tdf, étape gardée) et laisse passer une chaîne spécialisée', async () => {
+    const EUROSPORT = resolveChannelId('eurosport france')!; // généraliste
+    const LANTERNE = resolveChannelId('lanterne rouge')!;     // spécialisée cyclisme
+    // Mock RSS PAR channelId : Eurosport (généraliste) sert 1 foot + 1 étape ;
+    // Lanterne Rouge (spécialisée) sert une vidéo hors-lexique qui doit passer telle quelle.
+    const perChannel: Record<string, RssEntry[]> = {
+      [EUROSPORT]: [
+        { videoId: 'foot', title: 'Ligue 1 : le choc au sommet', publishedAt: '2026-07-06T09:00:00Z', channel: 'Eurosport France' },
+        { videoId: 'etape', title: 'Tour de France étape 6 : le parcours dévoilé', publishedAt: '2026-07-06T08:00:00Z', channel: 'Eurosport France' },
+      ],
+      [LANTERNE]: [
+        { videoId: 'spe', title: 'On refait la course (podcast)', publishedAt: '2026-07-06T07:00:00Z', channel: 'Lanterne Rouge' },
+      ],
+    };
+    const app = createApp({
+      classify: async (_ids, videos) => videos.map((v) => ({ videoId: v.videoId, spoiler: false, safeTitle: null })),
+      fetchChannelFeed: async (id) => perChannel[id] ?? [],
+      now: () => NOW,
+    });
+    const res = await app.request('/feed/tdf-2026');
+    const body = (await res.json()) as FeedResponse;
+    const ids = body.videos.map((v) => v.videoId);
+    expect(ids).toContain('etape'); // généraliste + matche le lexique → gardé
+    expect(ids).not.toContain('foot'); // généraliste + hors-lexique → écarté
+    expect(ids).toContain('spe'); // chaîne spécialisée → passe SANS filtre lexique
+  });
+
+  it('ne renvoie que les vidéos dans la fenêtre de fraîcheur (100 h > 72 h → écartée)', async () => {
+    const entries: RssEntry[] = [
+      { videoId: 'fresh', title: 'Tour de France étape 6', publishedAt: '2026-07-06T06:00:00Z', channel: 'Lanterne Rouge' }, // ~6 h
+      { videoId: 'stale', title: 'Tour de France étape 1', publishedAt: '2026-07-02T08:00:00Z', channel: 'Lanterne Rouge' }, // ~100 h
+    ];
+    const app = createApp({ classify, fetchChannelFeed: async () => entries, now: () => NOW });
+    const res = await app.request('/feed/tdf-2026');
+    const body = (await res.json()) as FeedResponse;
+    const ids = body.videos.map((v) => v.videoId);
+    expect(ids).toContain('fresh');
+    expect(ids).not.toContain('stale'); // > maxAgeHours (72 h) → hors fenêtre
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers de pertinence (feed companion)
+// ---------------------------------------------------------------------------
+
+describe('titleMatchesLexicon', () => {
+  it('matche un mot du lexique, insensible à la casse', () => {
+    expect(titleMatchesLexicon('Résumé ÉTAPE 6 du Tour', ['étape'])).toBe(true);
+    expect(titleMatchesLexicon('MATCH highlights de la journée', ['match highlights'])).toBe(true);
+  });
+  it('ne matche pas un titre hors lexique', () => {
+    expect(titleMatchesLexicon('Recette de crêpes bretonnes', ['étape', 'peloton'])).toBe(false);
+    expect(titleMatchesLexicon('', ['étape'])).toBe(false);
+  });
+});
+
+describe('isGeneralistChannel', () => {
+  it('true pour une chaîne multi-sports mappée (insensible à la casse)', () => {
+    expect(isGeneralistChannel('Eurosport France')).toBe(true);
+    expect(isGeneralistChannel('bein sports france')).toBe(true);
+    expect(isGeneralistChannel('france tv sport')).toBe(true);
+  });
+  it('false pour une chaîne spécialisée, mono-thématique ou inconnue', () => {
+    expect(isGeneralistChannel('lanterne rouge')).toBe(false);
+    expect(isGeneralistChannel('fifa')).toBe(false); // mono-foot
+    expect(isGeneralistChannel('wimbledon')).toBe(false);
+    expect(isGeneralistChannel('chaîne inconnue')).toBe(false);
   });
 });
