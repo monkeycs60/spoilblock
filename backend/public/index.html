@@ -50,6 +50,12 @@
     main { padding: 16px; max-width: 640px; margin: 0 auto; }
     .status { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 16px; }
     .status.error { color: var(--danger); }
+    /* Intitulé de section (« Résumé du jour », « Résumés », « Autour de la course »). */
+    .section-label {
+      font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin: 22px 2px 10px;
+    }
+    #feed > .section-label:first-child { margin-top: 4px; }
     .feed { display: flex; flex-direction: column; gap: 12px; list-style: none; padding: 0; margin: 0; }
     .card {
       background: var(--surface); border: 1px solid var(--border);
@@ -57,6 +63,9 @@
       transition: border-color 0.15s ease, transform 0.05s ease;
     }
     .card:active { transform: scale(0.995); }
+    /* Hero « Résumé du jour » : grande carte mise en avant (bordure accentuée + titre plus grand). */
+    .card.hero { border-color: var(--emerald-dim); box-shadow: 0 0 0 1px rgba(16,185,129,0.15); }
+    .card.hero .title { font-size: 19px; }
     .thumb {
       position: relative; width: 100%; aspect-ratio: 16 / 9;
       background: #000 center / cover no-repeat; cursor: pointer;
@@ -66,9 +75,10 @@
       content: ""; position: absolute; inset: 0;
       background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.45));
     }
-    /* Visuel neutre des vidéos protégées : AUCUNE image YouTube n'est chargée
-       (une miniature, même floutée en CSS, reste devinable et le flou est
-       réversible via l'inspecteur). Dégradé sombre + emoji compétition + motif. */
+    /* Visuel neutre de TOUTES les vidéos : la companion est l'espace 100 % sûr,
+       AUCUNE image YouTube n'est chargée — même une vidéo au titre neutre peut
+       avoir une miniature qui montre le vainqueur (bras levés, podium). Dégradé
+       sombre + emoji compétition + motif. */
     .thumb.masked {
       background: radial-gradient(circle at 50% 38%, #1b2a23 0%, #0d1512 60%, #080c0a 100%);
     }
@@ -134,7 +144,7 @@
 
   <main>
     <div id="status" class="status">Chargement…</div>
-    <ul id="feed" class="feed"></ul>
+    <div id="feed"></div>
   </main>
 
   <footer id="footer">Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.</footer>
@@ -169,6 +179,9 @@
         loadingFeed: "Chargement du feed…",
         footer: "Les titres révélateurs sont masqués. Lancez la vidéo l'esprit tranquille.",
         protected: "protégé",
+        heroLabel: "Résumé du jour",
+        recapsSection: "Résumés",
+        aroundSection: "Autour de la course",
         noVideos: "Aucune vidéo récente pour cette compétition.",
         emptyFeed: "Rien de récent — reviens après la prochaine étape/course !",
         noCompetitions: "Aucune compétition disponible.",
@@ -183,6 +196,9 @@
         loadingFeed: "Loading feed…",
         footer: "Revealing titles are hidden. Hit play with peace of mind.",
         protected: "protected",
+        heroLabel: "Today's recap",
+        recapsSection: "Recaps",
+        aroundSection: "Around the race",
         noVideos: "No recent video for this competition.",
         emptyFeed: "Nothing recent — check back after the next stage/race!",
         noCompetitions: "No competition available.",
@@ -289,6 +305,54 @@
     overlayEl.addEventListener("click", function (e) { if (e.target === overlayEl) closePlayer(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closePlayer(); });
 
+    // Construit la carte d'une vidéo. AUCUNE miniature YouTube n'est JAMAIS chargée :
+    // la companion est l'espace 100 % sûr — même une vidéo au titre neutre peut avoir
+    // une miniature qui montre le vainqueur. Visuel neutre (emoji compétition) partout.
+    // Le badge « protégé » reste réservé aux titres réécrits (v.spoiler).
+    function makeCard(v, extraClass) {
+      var li = document.createElement("li");
+      li.className = "card" + (extraClass ? " " + extraClass : "");
+
+      var thumbHtml =
+        '<div class="thumb masked">' +
+          '<span class="masked-emoji" aria-hidden="true">' + esc(currentEmoji) + '</span>' +
+          '<div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>' +
+        '</div>';
+
+      var badgeHtml = v.spoiler
+        ? '<span class="badge protected">&#128737; ' + esc(t("protected")) + '</span>' +
+          '<span class="dot"></span>'
+        : '';
+
+      li.innerHTML =
+        thumbHtml +
+        '<div class="body">' +
+          '<div class="meta">' +
+            badgeHtml +
+            '<span>' + esc(v.channel) + '</span>' +
+            '<span class="dot"></span>' +
+            '<span>' + esc(relativeDate(v.publishedAt)) + '</span>' +
+          '</div>' +
+          '<p class="title">' + esc(v.safeTitle) + '</p>' +
+        '</div>';
+
+      li.querySelector(".thumb").addEventListener("click", function () { openPlayer(v.videoId); });
+      return li;
+    }
+
+    // Ajoute une section (intitulé + liste de cartes). No-op si aucune vidéo.
+    function appendSection(labelKey, items, cardClass) {
+      if (!items.length) return;
+      var h = document.createElement("h2");
+      h.className = "section-label";
+      h.textContent = t(labelKey);
+      feedEl.appendChild(h);
+      var ul = document.createElement("ul");
+      ul.className = "feed";
+      items.forEach(function (v) { ul.appendChild(makeCard(v, cardClass)); });
+      feedEl.appendChild(ul);
+    }
+
     function renderVideos(videos) {
       feedEl.innerHTML = "";
       if (!videos || videos.length === 0) {
@@ -298,53 +362,23 @@
         return;
       }
       setStatus("", false);
+
+      // Le feed est déjà trié par date décroissante côté backend, et chaque vidéo
+      // porte un `kind` ('recap' | 'other') détecté serveur (lib/videoKind).
+      // Hero = 1er 'recap' du feed trié (= le résumé le plus récent) → « Résumé du jour ».
+      // Puis « Résumés » (les autres recap), puis « Autour de la course » (le reste).
+      var recaps = [];
+      var others = [];
       videos.forEach(function (v) {
-        var li = document.createElement("li");
-        li.className = "card";
-
-        // Miniature : pour une vidéo protégée (v.spoiler), on NE charge PAS la
-        // miniature YouTube — elle spoile visuellement (podium, bras levés…) et
-        // un flou CSS reste devinable/réversible. À la place, visuel neutre CSS.
-        // Non-spoiler : la miniature publique est sûre, on l'affiche normalement.
-        var thumbHtml;
-        if (v.spoiler) {
-          thumbHtml =
-            '<div class="thumb masked">' +
-              '<span class="masked-emoji" aria-hidden="true">' + esc(currentEmoji) + '</span>' +
-              '<div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>' +
-            '</div>';
-        } else {
-          var thumbUrl = "https://i.ytimg.com/vi/" + encodeURIComponent(v.videoId) + "/hqdefault.jpg";
-          thumbHtml =
-            '<div class="thumb" style="background-image:url(\'' + thumbUrl + '\')">' +
-              '<div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>' +
-            '</div>';
-        }
-
-        // Aucun titre n'est « révélable » côté web : un spoiler ne doit jamais l'être,
-        // un non-spoiler n'a rien à révéler (son safeTitle EST déjà le titre original).
-        // Badge « protégé » réservé aux vraies vidéos spoiler (titre réécrit + miniature
-        // masquée) — l'afficher sur une carte qui montre sa vraie miniature serait trompeur.
-        var badgeHtml = v.spoiler
-          ? '<span class="badge protected">&#128737; ' + esc(t("protected")) + '</span>' +
-            '<span class="dot"></span>'
-          : '';
-        li.innerHTML =
-          thumbHtml +
-          '<div class="body">' +
-            '<div class="meta">' +
-              badgeHtml +
-              '<span>' + esc(v.channel) + '</span>' +
-              '<span class="dot"></span>' +
-              '<span>' + esc(relativeDate(v.publishedAt)) + '</span>' +
-            '</div>' +
-            '<p class="title">' + esc(v.safeTitle) + '</p>' +
-          '</div>';
-
-        li.querySelector(".thumb").addEventListener("click", function () { openPlayer(v.videoId); });
-
-        feedEl.appendChild(li);
+        if (v.kind === "recap") recaps.push(v);
+        else others.push(v);
       });
+      var hero = recaps.length ? recaps[0] : null;
+      var restRecaps = recaps.slice(1);
+
+      if (hero) appendSection("heroLabel", [hero], "hero");
+      appendSection("recapsSection", restRecaps, null);
+      appendSection("aroundSection", others, null);
     }
 
     function loadFeed(id) {

@@ -23,6 +23,7 @@ import {
 } from '../lib/rss';
 import { captureServerEvent, BACKEND_DISTINCT_ID } from '../lib/posthog';
 import type { Classification, ClassifyFn, Video } from '../lib/classifier';
+import { kind, type VideoKind } from '../lib/videoKind';
 
 /** Une vidéo telle que renvoyée par /feed (jamais de titre original révélable). */
 export type FeedVideo = {
@@ -31,10 +32,17 @@ export type FeedVideo = {
   publishedAt: string;
   channel: string;
   /**
-   * true = titre réécrit / voilé (le client NE DOIT PAS charger la miniature
-   * YouTube brute, elle spoile visuellement). false = contenu sûr, miniature OK.
+   * true = titre réécrit / voilé. Sur la companion AUCUNE miniature YouTube n'est
+   * jamais chargée (même pour un non-spoiler : une miniature au titre neutre peut
+   * montrer le vainqueur) ; ce flag ne sert plus qu'au badge « protégé ».
    */
   spoiler: boolean;
+  /**
+   * Type de contenu déduit du titre AFFICHÉ (voir lib/videoKind) : 'recap' pour un
+   * résumé / temps forts / highlights, 'other' pour le reste (interviews, analyses…).
+   * Le front met en avant le 1er 'recap' du feed trié (« Résumé du jour »).
+   */
+  kind: VideoKind;
 };
 
 export type FeedResponse = { videos: FeedVideo[] };
@@ -207,13 +215,15 @@ export function createFeedRoute(deps: FeedRouteDeps) {
 
       if (r.spoiler) {
         spoilers += 1;
-        const raw = r.safeTitle ?? genericSafeTitle(comp);
+        const safeTitle = (r.safeTitle ?? genericSafeTitle(comp)).slice(0, SAFE_TITLE_MAX);
         return {
           videoId: e.videoId,
-          safeTitle: raw.slice(0, SAFE_TITLE_MAX),
+          safeTitle,
           publishedAt: e.publishedAt,
           channel: e.channel,
           spoiler: true,
+          // Type déduit du titre AFFICHÉ (le safeTitle réécrit).
+          kind: kind(safeTitle),
         };
       }
       // Non-spoiler : le titre original est sûr → il devient directement le safeTitle.
@@ -223,6 +233,8 @@ export function createFeedRoute(deps: FeedRouteDeps) {
         publishedAt: e.publishedAt,
         channel: e.channel,
         spoiler: false,
+        // Type déduit du titre AFFICHÉ (= le titre original, déjà sûr).
+        kind: kind(e.title),
       };
     });
 

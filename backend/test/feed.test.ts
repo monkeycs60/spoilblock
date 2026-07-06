@@ -287,6 +287,40 @@ describe('GET /feed/:competitionId', () => {
     expect(ids).toContain('spe'); // chaîne spécialisée → passe SANS filtre lexique
   });
 
+  it('annote chaque vidéo d\'un `kind` (recap détecté sur le titre AFFICHÉ)', async () => {
+    const app = makeApp();
+    const res = await app.request('/feed/tdf-2026');
+    const body = (await res.json()) as FeedResponse;
+
+    // Toutes les vidéos portent un kind 'recap' | 'other'.
+    for (const v of body.videos) {
+      expect(['recap', 'other']).toContain(v.kind);
+    }
+    // v-new est spoiler → safeTitle réécrit « …Résumé… » → recap.
+    expect(body.videos.find((v) => v.videoId === 'v-new')!.kind).toBe('recap');
+    // v-old « Recette de crêpes » et v-mid « Présentation du parcours » → other.
+    expect(body.videos.find((v) => v.videoId === 'v-old')!.kind).toBe('other');
+    expect(body.videos.find((v) => v.videoId === 'v-mid')!.kind).toBe('other');
+  });
+
+  it('le hero est identifiable : 1er recap du feed trié (le plus récent)', async () => {
+    const app = makeApp();
+    const res = await app.request('/feed/tdf-2026');
+    const body = (await res.json()) as FeedResponse;
+
+    // Feed trié par date décroissante → le 1er recap rencontré est le résumé le plus récent.
+    const hero = body.videos.find((v) => v.kind === 'recap');
+    expect(hero).toBeDefined();
+    expect(hero!.videoId).toBe('v-new');
+  });
+
+  it('propage le kind au travers du cache de réponse (2e appel = même kind)', async () => {
+    const app = makeApp();
+    const first = (await (await app.request('/feed/tdf-2026')).json()) as FeedResponse;
+    const cached = (await (await app.request('/feed/tdf-2026')).json()) as FeedResponse;
+    expect(cached.videos.map((v) => v.kind)).toEqual(first.videos.map((v) => v.kind));
+  });
+
   it('ne renvoie que les vidéos dans la fenêtre de fraîcheur (100 h > 72 h → écartée)', async () => {
     const entries: RssEntry[] = [
       { videoId: 'fresh', title: 'Tour de France étape 6', publishedAt: '2026-07-06T06:00:00Z', channel: 'Lanterne Rouge' }, // ~6 h
