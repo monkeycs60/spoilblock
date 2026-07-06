@@ -11,6 +11,7 @@ import { extractCard, CARD_SELECTOR } from './lib/extract.js';
 import { decideReprocess, decideAgeUpdate, videoIdChanged } from './lib/reprocess.js';
 import { backendDecision } from './lib/backendDecision.js';
 import { previewDecision, parseVideoIdFromHref } from './lib/previewDecision.js';
+import { shouldVeilAd } from './lib/adDecision.js';
 
 // État mutable des compétitions actives + interrupteurs (pause / on-off). Rechargé
 // depuis chrome.storage.local au démarrage et à chaque changement (sans reload).
@@ -240,11 +241,12 @@ function stripVeil(card, titleEl, restoreText) {
     el.removeAttribute('title');
   }
   card.classList.remove('spoilguard-veiled');
-  // La description sous la carte peut spoiler même quand le titre est propre
-  // (« X a remporté l'étape juste devant Y » sous « Résumé de la 2e étape »).
-  // stripVeil la restaure par défaut (révélation utilisateur, recyclage, vidéo
-  // trop vieille) ; backendUnveil la re-masque explicitement derrière.
-  card.classList.remove('spoilguard-desc-hidden');
+  // Le « soft-veil » (desc masquée + miniature floutée sous un titre propre) peut spoiler
+  // même quand le titre est neutre (« X a remporté l'étape » sous « Résumé de la 2e
+  // étape », ou une miniature du vainqueur bras levés). stripVeil le retire par défaut
+  // (révélation utilisateur, recyclage, vidéo trop vieille) ; backendUnveil le re-pose
+  // explicitement derrière (et re-attache sa propre révélation soft).
+  card.classList.remove('spoilguard-softveil');
   detachReveal(card);
   // La carte n'est plus voilée → la sortir du registre des videoIds voilés (débloque une
   // éventuelle preview globale la concernant). backendRetitle ne passe PAS ici (la carte
@@ -265,6 +267,35 @@ function reveal(card, titleEl) {
     status: 'revealed',
     revealedTitle: (el?.textContent || '').trim(),
   });
+}
+
+// Révélation SOFT (carte blanchie par le backend : titre déjà propre, mais miniature
+// floutée + description masquée via .spoilguard-softveil). Contrairement à `reveal`, on
+// ne touche PAS au texte (le vrai titre est déjà affiché) : on retire seulement le
+// soft-veil, on détache le listener, et on sort la carte du registre des videoIds voilés
+// (plus rien de masqué → une preview globale la concernant peut de nouveau s'afficher).
+// `revealedSoft` mémorise le geste pour ne jamais re-flouter la miniature au reprocess.
+function revealSoft(card) {
+  card.classList.remove('spoilguard-softveil');
+  detachReveal(card);
+  removeVeiledId(card);
+  setCardState(card, { status: 'clean', softveil: false, revealedSoft: true });
+}
+
+// Attache un dblclick LÉGER de révélation soft (une seule fois par carte, comme
+// attachReveal). Posé par backendUnveil sur la carte blanchie : le double-clic ne fait
+// que lever le soft-veil (miniature + description), sans réécrire le titre déjà propre.
+function attachSoftReveal(card, titleEl) {
+  if (dblHandlers.has(card)) return; // déjà un listener → ne pas empiler
+  const el = titleEl || findTitleEl(card);
+  if (!el) return;
+  const handler = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    revealSoft(card);
+  };
+  dblHandlers.set(card, { el, handler });
+  el.addEventListener('dblclick', handler);
 }
 
 // Reset complet : carte recyclée pour une autre vidéo. On efface tout état (WeakSet,
@@ -517,19 +548,41 @@ function applyBackendResult(card, result) {
 // concluent 'ignore' et ne la re-voilent jamais en boucle (même mécanisme que la
 // branche clean de maybeUpdateVeiledAge).
 function backendUnveil(card, titleEl) {
+  const prev = getCardState(card) || {};
   const el = titleEl || findTitleEl(card);
   stripVeil(card, el, true);
-  // Titre blanchi par le LLM ≠ carte inoffensive : la DESCRIPTION peut contenir le
-  // résultat (« Isaac Del Toro a remporté l'étape… » sous un titre neutre). On garde
-  // donc la description/le chip masqués à vie pour cette carte — seul un double-clic
-  // utilisateur (reveal) ou un recyclage (fullReset) les restaure via stripVeil.
-  card.classList.add('spoilguard-desc-hidden');
   processed.add(card);
+  // Titre blanchi par le LLM ≠ carte inoffensive : la DESCRIPTION peut contenir le
+  // résultat (« Isaac Del Toro a remporté l'étape… » sous un titre neutre) et la
+  // MINIATURE peut montrer le vainqueur bras levés. On pose donc un « soft-veil » (desc
+  // masquée + miniature floutée) à vie pour cette carte — seul un double-clic utilisateur
+  // (révélation soft) ou un recyclage (fullReset via stripVeil) le lève. Si l'utilisateur
+  // avait déjà révélé le soft-veil auparavant, on respecte son geste (pas de re-floutage).
+  if (prev.revealedSoft) {
+    setCardState(card, {
+      status: 'clean',
+      sig: (findTitleEl(card)?.textContent || '').trim(),
+      age: undefined,
+      backend: false,
+    });
+    return;
+  }
+  card.classList.add('spoilguard-softveil');
+  // stripVeil a sorti la carte du registre des videoIds voilés (elle n'est plus
+  // .spoilguard-veiled). Or, tant que le soft-veil est actif, la preview vidéo GLOBALE au
+  // survol (ytd-video-preview) rejouerait la miniature/les 1res secondes en clair — hors
+  // portée CSS scopée. On ré-inscrit donc le videoId au registre pour continuer à bloquer
+  // preview + mur de fin la concernant (retiré à la révélation soft via revealSoft).
+  addVeiledId(card, extractAny(card).videoId);
+  // Re-attache un dblclick léger : la carte n'a plus de listener (stripVeil l'a détaché),
+  // mais elle doit rester révélable pour lever le soft-veil.
+  attachSoftReveal(card, el);
   setCardState(card, {
     status: 'clean',
     sig: (findTitleEl(card)?.textContent || '').trim(),
     age: undefined,
     backend: false,
+    softveil: true,
   });
 }
 
@@ -615,10 +668,112 @@ function refreshGlobalLeaks() {
   updateEndscreenBlocks();
 }
 
+// --- Cartes SPONSORISÉES (pubs) ---------------------------------------------------
+// Les renderers publicitaires ont un markup distinct des cartes vidéo (pas dans
+// CARD_SELECTOR) et ne passent donc ni par le pré-filtre ni par le backend : une pub
+// pour une chaîne sport peut afficher image + texte spoiler en clair. Traitement
+// pragmatique et SÛR : pré-filtre LEXICAL uniquement (shouldVeilAd sur le textContent
+// agrégé + packs actifs) → si match, on floute tout le bloc (classe .spoilguard-ad-veiled)
+// et on remplace le titre, si on en identifie un, par un libellé générique. Aucun appel
+// backend (pas de videoId fiable). Double-clic pour révéler. Toujours défensif :
+// visibility/filter, jamais de remove/display:none sur le bloc lui-même (layout intact).
+const AD_SELECTOR = [
+  'ytd-ad-slot-renderer',
+  'ytd-in-feed-ad-layout-renderer',
+  'ytd-promoted-sparkles-web-renderer',
+  'ytd-promoted-video-renderer',
+  'ytd-display-ad-renderer',
+].join(',');
+const AD_SAFE_TITLE = '🛡️ Publicité liée à une compétition suivie';
+
+// État par bloc pub : { status:'veiled'|'revealed', titleEl, original } et handler dblclick.
+const adState = new WeakMap();
+const adHandlers = new WeakMap();
+
+// Titre d'une pub, si identifiable (markup très variable) — best-effort, multi-sélecteurs.
+// Null → on se contente de flouter les images (pas de libellé générique injecté).
+function findAdTitleEl(node) {
+  return node.querySelector(
+    '#video-title, .ytLockupMetadataViewModelTitle, #headline, span#title, ' +
+      'yt-formatted-string#title, [id*="headline"]',
+  );
+}
+
+function attachAdReveal(node, el) {
+  if (adHandlers.has(node)) return;
+  const handler = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    revealAd(node);
+  };
+  adHandlers.set(node, { el, handler });
+  el.addEventListener('dblclick', handler);
+}
+
+// Retire notre voile publicitaire : classe, libellé générique (titre d'origine restauré),
+// listener et état. N'échoue jamais sur un bloc partiel (garde-fous sur chaque étape).
+function stripAdVeil(node) {
+  node.classList.remove('spoilguard-ad-veiled');
+  const rec = adHandlers.get(node);
+  if (rec) {
+    rec.el.removeEventListener('dblclick', rec.handler);
+    adHandlers.delete(node);
+  }
+  const st = adState.get(node);
+  if (st && st.titleEl && st.original != null) {
+    st.titleEl.textContent = st.original;
+    st.titleEl.classList.remove('spoilguard-safe-title');
+    st.titleEl.removeAttribute('title');
+  }
+  adState.delete(node);
+  delete node.dataset.spoilguardAd;
+}
+
+function veilAd(node) {
+  node.classList.add('spoilguard-ad-veiled');
+  const titleEl = findAdTitleEl(node);
+  if (titleEl) {
+    const original = titleEl.textContent;
+    titleEl.textContent = AD_SAFE_TITLE;
+    titleEl.classList.add('spoilguard-safe-title');
+    titleEl.title = 'SpoilBlock — double-clic pour révéler';
+    adState.set(node, { status: 'veiled', titleEl, original });
+  } else {
+    adState.set(node, { status: 'veiled', titleEl: null, original: null });
+  }
+  node.dataset.spoilguardAd = 'veiled';
+  // Listener sur le bloc entier (le dblclick sur le titre bulle jusqu'ici) : révèle sans
+  // déclencher la navigation vers l'annonceur (preventDefault/stopPropagation).
+  attachAdReveal(node, node);
+}
+
+// Révélation utilisateur d'une pub voilée : on restaure tout, puis on MÉMORISE le geste
+// (status 'revealed') pour ne jamais re-voiler ce bloc — même à un re-scan.
+function revealAd(node) {
+  stripAdVeil(node);
+  adState.set(node, { status: 'revealed', titleEl: null, original: null });
+  node.dataset.spoilguardAd = 'revealed';
+}
+
+function processAd(node) {
+  const st = adState.get(node);
+  // Décision déjà prise (voilée) ou geste utilisateur respecté (révélée) → ne rien faire.
+  if (st && (st.status === 'veiled' || st.status === 'revealed')) return;
+  // Pause / extension coupée : ne rien voiler ; sans marquage, le bloc sera réévalué à la
+  // reprise (prochain scan / mutation).
+  if (!veilingEnabled(state)) return;
+  const text = node.textContent || '';
+  if (!text.trim()) return; // bloc pas encore peuplé, on repassera
+  if (!shouldVeilAd(text, state.merged)) return;
+  veilAd(node);
+}
+
 function scan(root) {
   if (root.matches?.(CARD_SELECTOR) || root.matches?.(WATCH_SELECTOR)) processCard(root);
   root.querySelectorAll?.(CARD_SELECTOR).forEach(processCard);
   root.querySelectorAll?.(WATCH_SELECTOR).forEach(processCard);
+  if (root.matches?.(AD_SELECTOR)) processAd(root);
+  root.querySelectorAll?.(AD_SELECTOR).forEach(processAd);
 }
 
 // Ré-applique l'état courant (compétitions actives + pause/on-off) aux cartes déjà
@@ -631,6 +786,13 @@ function rescanAll() {
     if ((getCardState(card) || {}).status === 'revealed') return;
     fullReset(card);
     processCard(card);
+  });
+  // Idem pour les pubs voilées : on lève le voile (hors pubs révélées par l'utilisateur)
+  // afin que le re-scan les réévalue contre le nouveau pack fusionné (une pub voilée pour
+  // une compétition retirée doit se dé-voiler ; une pub d'une compétition ajoutée se voiler).
+  document.querySelectorAll?.('[data-spoilguard-ad]').forEach((node) => {
+    if ((adState.get(node) || {}).status === 'revealed') return;
+    stripAdVeil(node);
   });
   if (document.body) scan(document.body);
 }
@@ -654,6 +816,13 @@ function cardOf(target) {
   return el?.closest?.(`${CARD_SELECTOR},${WATCH_SELECTOR}`) || null;
 }
 
+// Idem pour un bloc pub : les annonces se peuplent parfois APRÈS insertion (texte/image
+// arrivant en second) → une mutation interne doit relancer la décision de voile lexical.
+function adOf(target) {
+  const el = target.nodeType === 1 ? target : target.parentElement;
+  return el?.closest?.(AD_SELECTOR) || null;
+}
+
 new MutationObserver((muts) => {
   for (const m of muts) {
     if (m.type === 'childList') {
@@ -670,10 +839,14 @@ new MutationObserver((muts) => {
       // on relance la décision de re-traitement.
       const card = cardOf(m.target);
       if (card) reprocessCard(card);
+      const ad = adOf(m.target);
+      if (ad) processAd(ad);
     } else if (m.type === 'characterData') {
       // Filet complémentaire : édition in-place d'un nœud texte existant.
       const card = cardOf(m.target);
       if (card) reprocessCard(card);
+      const ad = adOf(m.target);
+      if (ad) processAd(ad);
     }
   }
   // ytd-video-preview peut apparaître à tout moment (1er survol) → tenter de l'attacher.

@@ -5,7 +5,7 @@
 import { PACKS } from './lib/pack.js';
 import { t, applyI18n } from './lib/i18n.js';
 
-const DEFAULT_BACKEND = 'https://o2nn42t9tx9tzfukiamwlrnl.137.74.43.81.sslip.io';
+const DEFAULT_BACKEND = 'https://spoilblock.com';
 const DEFAULT_COMPETITIONS = ['tdf-2026'];
 const PAUSE_MS = 10 * 60 * 1000;
 

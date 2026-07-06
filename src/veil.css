@@ -19,11 +19,22 @@
    IA de YouTube spoilent en clair malgré le titre/miniature voilés. On les masque. */
 .spoilguard-veiled .metadata-snippet-container,
 .spoilguard-veiled ytd-expandable-metadata-renderer { display: none !important; }
-/* Carte blanchie par le backend (titre propre) : la description peut quand même
-   spoiler → elle reste masquée à vie via cette classe (retirée uniquement au
-   double-clic utilisateur ou au recyclage de la carte). */
-.spoilguard-desc-hidden .metadata-snippet-container,
-.spoilguard-desc-hidden ytd-expandable-metadata-renderer { display: none !important; }
+/* Carte blanchie par le backend (« soft-veil » : titre propre, mais le RESTE peut
+   spoiler). Deux fuites subsistent sous un titre neutralisé par le LLM :
+   - la DESCRIPTION / le chip « Résumé » (« Isaac Del Toro a remporté l'étape… »),
+   - la MINIATURE, qui peut montrer le vainqueur bras levés même si le titre est sobre.
+   On garde donc description masquée + miniature floutée à vie via cette classe (retirée
+   uniquement à la révélation soft en double-clic, ou au recyclage de la carte). Mêmes
+   sélecteurs de miniature / coupe-preview que .spoilguard-veiled. */
+.spoilguard-softveil .metadata-snippet-container,
+.spoilguard-softveil ytd-expandable-metadata-renderer { display: none !important; }
+.spoilguard-softveil img,
+.spoilguard-softveil ytd-thumbnail,
+.spoilguard-softveil yt-thumbnail-view-model {
+  filter: blur(16px) !important;
+}
+.spoilguard-softveil ytd-thumbnail-overlay-inline-playback-renderer,
+.spoilguard-softveil video { display: none !important; }
 /* Le titre neutre réinjecté doit rester lisible (le sélecteur transparent ci-dessus
    le cible aussi). `inherit` ne suffit pas : sur l'accueil, YouTube pose la couleur
    sur l'élément titre lui-même (le parent est noir par défaut → titre noir en dark).
@@ -45,3 +56,18 @@ html[dark] .spoilguard-safe-title { color: #f1f1f1 !important; }
 ytd-video-preview.spoilguard-preview-blocked,
 a.ytp-videowall-still.spoilguard-preview-blocked { visibility: hidden !important; }
 ytd-video-preview.spoilguard-preview-blocked video { display: none !important; }
+
+/* Cartes SPONSORISÉES (pubs). Les renderers publicitaires (ytd-ad-slot-renderer,
+   ytd-in-feed-ad-layout-renderer, ytd-promoted-sparkles-web-renderer…) ont un markup
+   distinct des cartes vidéo et ne passent pas par le pré-filtre/backend. Sur match
+   LEXICAL, content.js pose `.spoilguard-ad-veiled` : on floute images/miniatures et on
+   coupe toute preview vidéo. Le titre, si identifiable, est remplacé par un libellé
+   générique (voir content.js) rendu lisible via .spoilguard-safe-title. On reste
+   défensif : blur/filter, jamais de display:none sur le bloc lui-même (layout intact). */
+.spoilguard-ad-veiled img,
+.spoilguard-ad-veiled ytd-thumbnail,
+.spoilguard-ad-veiled yt-thumbnail-view-model {
+  filter: blur(16px) !important;
+}
+.spoilguard-ad-veiled ytd-thumbnail-overlay-inline-playback-renderer,
+.spoilguard-ad-veiled video { display: none !important; }

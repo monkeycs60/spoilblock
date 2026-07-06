@@ -23,7 +23,7 @@
 
 import { recordBlocked, formatBadge, dayStamp } from './lib/badgeCount.js';
 
-const DEFAULT_BACKEND = 'https://o2nn42t9tx9tzfukiamwlrnl.137.74.43.81.sslip.io'; // prod VPS (dev : chrome.storage.local.backendUrl = http://localhost:8787)
+const DEFAULT_BACKEND = 'https://spoilblock.com'; // prod (secours : sslip.io via options, dev : http://localhost:8787)
 const DEFAULT_COMPETITIONS = ['tdf-2026'];
 const DEBOUNCE_MS = 200;
 const BATCH_MAX = 30;
