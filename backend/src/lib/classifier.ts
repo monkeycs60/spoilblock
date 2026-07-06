@@ -34,7 +34,7 @@ export const DEFAULT_MODEL_ID = 'gpt-oss-120b';
  * des verdicts erronés d'une version précédente resteraient servis. Intégrée à la
  * clé de cache (`classificationKey`, cache.ts) sous la forme `v{N}|…`.
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 // Schéma strict imposé au LLM. On enveloppe le tableau dans un objet `results`
 // (plus fiable que le mode array brut sur certains providers).
@@ -92,6 +92,7 @@ RÈGLES RENFORCÉES (souvent manquées — applique-les strictement) :
 - Nom d'une ÉQUIPE + une performance = SPOILER. Une équipe qui « domine », est « en démonstration », « écrase », fait une « masterclass », est « intouchable/injouable/impériale » révèle QUI a gagné ou dominé. Ex. « UAE Emirates en démonstration », « Visma écrase l'étape », « la masterclass de la Soudal » → spoiler=true.
 - Toute mention qu'un coureur OU une équipe « offre la victoire », « fait un cadeau », « laisse gagner », « se sacrifie pour » un autre = SPOILER (ça dévoile le vainqueur ET le second) → spoiler=true.
 - Un titre qui contient « (résumé de l'étape N) », « résumé étape N », « le film de l'étape » etc. sur une chaîne officielle ET avec du contenu émotionnel/superlatif (démonstration, insolent, incroyable, majuscules criardes) = SPOILER → spoiler=true. Ne te laisse PAS berner par le mot « résumé » : un résumé émotionnel trahit toujours le résultat.
+- Toute CITATION ou déclaration d'APRÈS-course = SPOILER, même sans nommer le vainqueur : « X pensait gagner », « on méritait mieux », « X déçu », « X frustré », « je ne comprends pas ce qui s'est passé » impliquent que X a PERDU ; « on savait que ça passerait », « soulagement » impliquent une victoire. Toute émotion d'après-course attribuée à un coureur/une équipe révèle son résultat → spoiler=true.
 
 N'est PAS un spoiler (spoiler=false) :
 - une vidéo NON liée aux compétitions suivies (autre sport, autre compétition non suivie, autre sujet, autre édition) → spoiler=false ;
@@ -117,6 +118,7 @@ EXEMPLES (AVANT le titre réel → APRÈS le safeTitle attendu) :
 - « Tour de France 2026 : UAE Emirates XRG en DÉMONSTRATION à Barcelone (résumé de l'étape 2) » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Résumé étape 2" (équipe en démonstration = résultat révélé ; c'est un résumé, PAS une analyse).
 - « TOUR DE FRANCE 2026 - INSOLENTS ! Tadej Pogacar OFFRE LA VICTOIRE à Isaac Del Toro sur l'étape 2 » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Résumé étape 2" (« offre la victoire » = vainqueur révélé ; temps forts d'étape = Résumé, PAS Analyse).
 - « Tour de France 2026 – Débrief étape 2 : on refait la course au micro » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Analyse étape 2" (débrief/plateau = Analyse).
+- « TOUR DE FRANCE 2026 - "Tadej Pogacar pensait gagner l'étape" : Le sprint final décrypté » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Analyse du sprint final" (« pensait gagner » = citation d'après-course qui révèle qu'il n'a PAS gagné).
 - « Stage 2 Highlights - INSANE finish as UAE dominates! » → spoiler=true, safeTitle="🚴 Tour de France 2026 – Stage 2 Highlights" (titre EN → safeTitle EN ; on retire le résultat « UAE dominates » et le ton « INSANE », on garde le format highlights dans la langue d'origine).
 - « Le parcours du Tour de France 2026 dévoilé » → spoiler=false, safeTitle=null (annonce neutre avant course, aucun résultat).
 
