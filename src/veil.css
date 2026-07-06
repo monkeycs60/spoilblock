@@ -3,14 +3,28 @@
    - Polymer classique : titre = #video-title
    - view-model 2026    : titre = .ytLockupMetadataViewModelTitle (classes camelCase réelles) */
 .spoilguard-veiled #video-title,
-.spoilguard-veiled .ytLockupMetadataViewModelTitle {
+.spoilguard-veiled .ytLockupMetadataViewModelTitle,
+.spoilguard-veiled .shortsLockupViewModelHostMetadataTitle a {
   color: transparent !important;
   position: relative;
 }
-.spoilguard-veiled img,
+/* Miniatures : le blur est appliqué à l'IMAGE (jamais au conteneur — le halo d'un
+   filter déborde de la box de l'élément et seul un ANCÊTRE overflow:hidden peut le
+   rogner). Le conteneur clippe (overflow hidden + coins arrondis YouTube), l'image
+   est zoomée pour que ses bords adoucis restent hors cadre. */
 .spoilguard-veiled ytd-thumbnail,
-.spoilguard-veiled yt-thumbnail-view-model {
-  filter: blur(40px) saturate(0.55) contrast(0.9) !important; transform: scale(1.12); /* blur fort + désaturation : un casque/maillot reconnaissable à 16px devient une tache ; scale masque les bords nets que le blur laisse dépasser */
+.spoilguard-veiled yt-thumbnail-view-model,
+.spoilguard-veiled .ytThumbnailViewModelHost,
+.spoilguard-veiled .shortsLockupViewModelHostThumbnailParentContainer {
+  overflow: hidden !important;
+  border-radius: 12px;
+}
+.spoilguard-veiled ytd-thumbnail img,
+.spoilguard-veiled yt-thumbnail-view-model img,
+.spoilguard-veiled .ytThumbnailViewModelHost img,
+.spoilguard-veiled yt-image img {
+  filter: blur(40px) saturate(0.55) contrast(0.9) !important;
+  transform: scale(1.3) !important;
 }
 /* Coupe le preview vidéo au survol (spoil aussi) */
 .spoilguard-veiled ytd-thumbnail-overlay-inline-playback-renderer,
@@ -28,10 +42,19 @@
    sélecteurs de miniature / coupe-preview que .spoilguard-veiled. */
 .spoilguard-softveil .metadata-snippet-container,
 .spoilguard-softveil ytd-expandable-metadata-renderer { display: none !important; }
-.spoilguard-softveil img,
 .spoilguard-softveil ytd-thumbnail,
-.spoilguard-softveil yt-thumbnail-view-model {
-  filter: blur(40px) saturate(0.55) contrast(0.9) !important; transform: scale(1.12); /* blur fort + désaturation : un casque/maillot reconnaissable à 16px devient une tache ; scale masque les bords nets que le blur laisse dépasser */
+.spoilguard-softveil yt-thumbnail-view-model,
+.spoilguard-softveil .ytThumbnailViewModelHost,
+.spoilguard-softveil .shortsLockupViewModelHostThumbnailParentContainer {
+  overflow: hidden !important;
+  border-radius: 12px;
+}
+.spoilguard-softveil ytd-thumbnail img,
+.spoilguard-softveil yt-thumbnail-view-model img,
+.spoilguard-softveil .ytThumbnailViewModelHost img,
+.spoilguard-softveil yt-image img {
+  filter: blur(40px) saturate(0.55) contrast(0.9) !important;
+  transform: scale(1.3) !important;
 }
 .spoilguard-softveil ytd-thumbnail-overlay-inline-playback-renderer,
 .spoilguard-softveil video { display: none !important; }
@@ -41,9 +64,11 @@
    Déterministe : YouTube met l'attribut `dark` sur <html> en thème sombre. */
 .spoilguard-veiled #video-title.spoilguard-safe-title,
 .spoilguard-veiled .ytLockupMetadataViewModelTitle.spoilguard-safe-title,
+.spoilguard-veiled .shortsLockupViewModelHostMetadataTitle a.spoilguard-safe-title,
 .spoilguard-safe-title { color: #0f0f0f !important; }
 html[dark] .spoilguard-veiled #video-title.spoilguard-safe-title,
 html[dark] .spoilguard-veiled .ytLockupMetadataViewModelTitle.spoilguard-safe-title,
+html[dark] .spoilguard-veiled .shortsLockupViewModelHostMetadataTitle a.spoilguard-safe-title,
 html[dark] .spoilguard-safe-title { color: #f1f1f1 !important; }
 
 /* Fuites HORS carte. Au survol, YouTube joue une preview vidéo dans un élément GLOBAL
@@ -64,10 +89,19 @@ ytd-video-preview.spoilguard-preview-blocked video { display: none !important; }
    coupe toute preview vidéo. Le titre, si identifiable, est remplacé par un libellé
    générique (voir content.js) rendu lisible via .spoilguard-safe-title. On reste
    défensif : blur/filter, jamais de display:none sur le bloc lui-même (layout intact). */
-.spoilguard-ad-veiled img,
 .spoilguard-ad-veiled ytd-thumbnail,
-.spoilguard-ad-veiled yt-thumbnail-view-model {
-  filter: blur(40px) saturate(0.55) contrast(0.9) !important; transform: scale(1.12); /* blur fort + désaturation : un casque/maillot reconnaissable à 16px devient une tache ; scale masque les bords nets que le blur laisse dépasser */
+.spoilguard-ad-veiled yt-thumbnail-view-model,
+.spoilguard-ad-veiled .ytThumbnailViewModelHost,
+.spoilguard-ad-veiled .shortsLockupViewModelHostThumbnailParentContainer {
+  overflow: hidden !important;
+  border-radius: 12px;
+}
+.spoilguard-ad-veiled ytd-thumbnail img,
+.spoilguard-ad-veiled yt-thumbnail-view-model img,
+.spoilguard-ad-veiled .ytThumbnailViewModelHost img,
+.spoilguard-ad-veiled yt-image img {
+  filter: blur(40px) saturate(0.55) contrast(0.9) !important;
+  transform: scale(1.3) !important;
 }
 .spoilguard-ad-veiled ytd-thumbnail-overlay-inline-playback-renderer,
 .spoilguard-ad-veiled video { display: none !important; }

@@ -1,15 +1,23 @@
 // Extraction des infos d'une carte vidéo YouTube.
 // Sélecteurs calés sur les fixtures DOM réelles (juillet 2026) — voir tests/fixtures/.
-// Trois familles de markup coexistent :
+// Quatre familles de markup coexistent :
 //   - ytd-video-renderer / ytd-compact-video-renderer  → Polymer classique (#video-title, ytd-channel-name)
 //   - yt-lockup-view-model (grille + sidebar 2026)      → view-model (.ytLockupMetadataViewModel*, .ytContentMetadataViewModel*)
 //   - ytd-rich-item-renderer                            → wrapper qui contient un yt-lockup-view-model
+//   - ytm-shorts-lockup-view-model (étagère Shorts)     → lockup Short : lien /shorts/, titre
+//        .shortsLockupViewModelHostMetadataTitle ; PAS de chaîne ni d'âge → channel '' / ageText null.
+//        Un wrapper ytm-shorts-lockup-view-model-v2 l'enveloppe (mêmes enfants, rien en propre) ;
+//        on ne cible QUE le lockup interne : le voile générique local re-matche son propre titre
+//        neutre (« … Tour de France … ») donc traiter les DEUX re-voilerait la même carte et
+//        casserait la révélation (deux listeners sur le même titre, dont un mémorise le titre
+//        neutre comme « original »). Un seul renderer par Short → traitement/révélation propres.
 
 export const CARD_SELECTOR = [
   'ytd-rich-item-renderer',
   'ytd-video-renderer',
   'ytd-compact-video-renderer',
   'yt-lockup-view-model',
+  'ytm-shorts-lockup-view-model',
 ].join(',');
 
 const AGE_RE = /il y a|\bago\b/i;
@@ -50,7 +58,12 @@ function extractChannel(card) {
 }
 
 function extractTitleEl(card) {
-  return card.querySelector('#video-title, .ytLockupMetadataViewModelTitle');
+  // Le titre Short vit dans le lien du h3 .shortsLockupViewModelHostMetadataTitle : on cible
+  // CE lien (et non le h3) pour aussi neutraliser son attribut `title` (tooltip natif qui
+  // spoilerait au survol) quand veil() écrit dessus.
+  return card.querySelector(
+    '#video-title, .ytLockupMetadataViewModelTitle, .shortsLockupViewModelHostMetadataTitle a',
+  );
 }
 
 function extractAgeText(card) {

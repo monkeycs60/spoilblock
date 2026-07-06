@@ -192,7 +192,8 @@ function removeVeiledId(card) {
 // h1 de la pseudo-carte /watch, pour que stripVeil/reveal retrouvent le bon nœud).
 function findTitleEl(card) {
   return card.querySelector(
-    '#video-title, .ytLockupMetadataViewModelTitle, h1.ytd-watch-metadata yt-formatted-string',
+    '#video-title, .ytLockupMetadataViewModelTitle, .shortsLockupViewModelHostMetadataTitle a, ' +
+      'h1.ytd-watch-metadata yt-formatted-string',
   );
 }
 

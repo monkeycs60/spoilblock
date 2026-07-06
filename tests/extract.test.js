@@ -42,6 +42,24 @@ describe('extractCard — yt-lockup-view-model (sidebar /watch)', () => {
   it('expose titleEl', () => expect(info.titleEl).toBeTruthy());
 });
 
+describe('extractCard — ytm-shorts-lockup-view-model (étagère Shorts)', () => {
+  const info = extractCard(load('short.html'));
+  it('videoId extrait depuis /shorts/ID (id à tiret initial)', () =>
+    expect(info.videoId).toBe('-kpUwFUwgDI'));
+  it('titre complet du lockup Short', () =>
+    expect(info.title).toBe('Qui va remporter la 3eme étape du Tour de France 2026 ?'));
+  it("channel === '' (les Shorts n'exposent pas de nom de chaîne)", () =>
+    expect(info.channel).toBe(''));
+  it('ageText === null (les Shorts n\'exposent pas d\'âge, juste des vues)', () =>
+    expect(info.ageText).toBe(null));
+  it('titleEl = le lien du titre (pour neutraliser aussi son attribut title)', () => {
+    expect(info.titleEl).toBeTruthy();
+    expect(info.titleEl.tagName).toBe('A');
+    // Doit bien être le lien du titre, pas celui de la miniature.
+    expect(info.titleEl.getAttribute('title')).toContain('Tour de France 2026');
+  });
+});
+
 describe('régression — nom type « Santiago » pris pour un âge (substring « ago »)', () => {
   // Carte lockup synthétique : 1re ligne de métadonnée = un nom de coureur réel
   // contenant « ago » en substring, suivie de la vraie ligne d'âge « il y a 2 heures ».
@@ -85,10 +103,11 @@ describe('robustesse', () => {
     void card;
   });
 
-  it('CARD_SELECTOR couvre les 4 types de cartes', () => {
+  it('CARD_SELECTOR couvre les types de cartes (dont Shorts)', () => {
     expect(CARD_SELECTOR).toContain('ytd-rich-item-renderer');
     expect(CARD_SELECTOR).toContain('ytd-video-renderer');
     expect(CARD_SELECTOR).toContain('ytd-compact-video-renderer');
     expect(CARD_SELECTOR).toContain('yt-lockup-view-model');
+    expect(CARD_SELECTOR).toContain('ytm-shorts-lockup-view-model');
   });
 });
